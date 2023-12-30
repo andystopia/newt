@@ -1,0 +1,17 @@
+[package]
+name = "newt"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+tap = "1.0.1"
+floem = {git = "https://github.com/lapce/floem", rev= "77bcbcb0c70e5135c0cc99cb94200ba45cf722b2"}
+bstr = { version = "1.8.0", features = ["serde"] }
+snafu = "0.7.5"
+im = "15.1.0"
+inline_tweak = "1.0.10"
+smol_str = "0.2.0"
