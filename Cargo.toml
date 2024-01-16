@@ -6,12 +6,23 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1.0.193", features = ["derive"] }
+serde = { version = "1.0.195", features = ["derive"] }
 serde_json = "1.0.108"
 tap = "1.0.1"
-floem = {git = "https://github.com/lapce/floem", rev= "77bcbcb0c70e5135c0cc99cb94200ba45cf722b2"}
+floem = {path = "./floem"}
 bstr = { version = "1.8.0", features = ["serde"] }
 snafu = "0.7.5"
 im = "15.1.0"
 inline_tweak = "1.0.10"
 smol_str = "0.2.0"
+once_cell = "1.19.0"
+parking_lot = "0.12.1"
+crossbeam = { version = "0.8.3", features = ["crossbeam-channel"] }
+strsim = "0.10.0"
+ordered-float = "4.2.0"
+url = "2.5.0"
+scraper = "0.18.1"
+reqwest = { version = "0.11.23", features = ["blocking"] }
+regex = "1.10.2"
+open = "5.0.1"
+nix-elastic-search = {git = "https://github.com/andystopia/nix-elastic-search.git", rev="8d90734fbaedb6c77df414c23b2401685fb46cd1"}
