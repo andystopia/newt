@@ -32,12 +32,13 @@ use floem::views::{
 };
 use floem::views::{static_label, v_stack_from_iter};
 use floem::window::WindowConfig;
-use floem::{quit_app, views};
+use floem::{quit_app, views, EventPropagation};
+use nix_elastic_search::response::NixPackage;
 
 use inline_tweak::tweak;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use search::{PackageSearchValue, PackageSupport};
+use search::PackageSupport;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use tap::Pipe;
@@ -49,6 +50,34 @@ use floem::{
 };
 
 use bstr::ByteSlice;
+
+// I think that we're being slowed down by include-str
+pub fn include_str(str: &'static str) -> &'static str {
+    Box::new(
+        std::fs::read_to_string(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("src")
+                .join(str),
+        )
+        .unwrap(),
+    )
+    .leak()
+}
+#[cfg(debug_assertions)]
+#[macro_export]
+macro_rules! instr {
+    ($lit:literal) => {
+        crate::include_str($lit)
+    };
+}
+
+#[cfg(not(debug_assertions))]
+#[macro_export]
+macro_rules! instr {
+    ($lit:literal) => {
+        include_str!($lit)
+    };
+}
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NixFlakeInfo {
@@ -79,7 +108,7 @@ use theme::theme;
 use im::Vector;
 use snafu::prelude::*;
 
-use crate::search::{search, search_by_name_metric};
+use crate::search::{available_on_this_system, search, search_by_name_metric};
 
 #[derive(Debug, Snafu)]
 pub enum ProgramError {
@@ -129,11 +158,11 @@ Error Log:
 }
 
 pub fn nix() -> std::process::Command {
-    std::process::Command::new("nix")
+    std::process::Command::new("/nix/var/nix/profiles/default/bin/nix")
 }
 
 pub fn nix_flake_show(source: &str) -> Result<NixFlakeInfo, ProgramError> {
-    let mut cmd = std::process::Command::new("nix");
+    let mut cmd = nix();
     cmd.args(["flake", "show"]);
 
     cmd.arg(source);
@@ -396,7 +425,7 @@ fn flake_list(
         .map(move |(idx, item)| {
             v_stack((
                 h_stack((
-                    views::svg(|| include_str!("../assets/github-mark-white.svg").to_owned())
+                    views::svg(|| instr!("../assets/github-mark-white.svg").to_owned())
                         .style(|s| s.height(12.0).aspect_ratio(Some(1.0))),
                     label(move || item.clone()),
                 ))
@@ -471,344 +500,193 @@ fn radio_button<T: PartialEq + Copy + 'static>(
     .on_click_stop(move |_| checked.set(checked_when))
 }
 
-/// stack:
-///   style: flex flex-row px-4 py-4 rounded-full bg-blue-500 mx-2 my-4 gap-x-2
-///   - label: "hello"
+pub fn obvious_layout(s: Style) -> Style {
+    s.min_width(0)
+        .min_height(0)
+        .max_width_full()
+        .min_width_full()
+}
 
-fn app_view(templates: Vec<NixTemplates>) -> impl View {
-    const SIDEBAR_WIDTH: f64 = 220.0;
-    const TOPBAR_HEIGHT: f64 = 38.0;
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+pub enum ApplicationScreen {
+    Search,
+    Docs,
+    Home,
+}
 
-    let template_sources = templates
-        .iter()
-        .map(|template| template.location.as_ref())
-        .map(extract_source_name)
-        .collect::<Vec<_>>();
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+pub struct ApplicationMode {
+    with_env: bool,
+    screen: ApplicationScreen,
+}
 
-    let owned_template_list = template_sources
-        .into_iter()
-        .map(|it| it.to_string())
-        .collect::<Vector<String>>();
-
-    let templates = create_rw_signal(templates);
-    let flake_sources = create_rw_signal(owned_template_list);
-
-    let selection_state = create_rw_signal(SelectedFlakeOption::default());
-
-    let _description = create_memo(move |_| {
-        let selection = selection_state.get();
-        if let Some((which_src, which_template)) =
-            selection.which_flake_source.zip(selection.which_template)
-        {
-            templates.get()[which_src].templates[which_template]
-                .description
-                .clone()
-        } else {
-            "Select an option on the left get a description.".to_owned()
-        }
-    });
-
-    let search_text = create_rw_signal("".to_owned());
-    let _searcher = text_input(search_text)
-        .placeholder("Search")
-        .style(|s| {
-            s.width_full()
-                .background(theme().bg_plus)
-                .color(theme().fg)
-                .cursor_color(theme().fg)
-                .padding(5.0)
-                .padding_horiz(10.0)
-                .border_radius(5.0)
-        })
-        .pipe(container)
-        .style(|s| {
-            s.padding_horiz(10.0)
-                .padding_vert(8.0)
-                .width_full()
-                .max_width_pct(30.0)
-                .max_height_full()
-        });
-
-    let top_bar = drag_window_area(views::empty())
-        .style(|s| s.width_full().height(TOPBAR_HEIGHT).justify_between());
-
-    let side_bar = v_stack((
-        label(|| "Flake Templates").pipe(container).style(|s| {
-            s.border_top(1.0)
-                .border_bottom(1.0)
-                .padding_left(15.0)
-                .font_weight(Weight::SEMIBOLD)
-                .padding_vert(2.0)
-                .border_color(theme().bd)
-        }),
-        flake_list(SIDEBAR_WIDTH, flake_sources, selection_state, templates)
-            .pipe(scroll)
-            // .hide_bar(|| true)
-            .pipe(container)
-            .style(|s| {
-                s.flex_grow(1.0)
-                    .min_height(0)
-                    .flex_basis(0)
-                    .padding_horiz(15)
-            }),
-    ))
-    .style(|s| s.flex_col().flex_grow(1.0).min_height(0));
-
-    let side_bar_2 = v_stack((label(|| "Recent Projects").pipe(container).style(|s| {
-        s.border_top(1.0)
-            .border_bottom(1.0)
-            .padding_left(15.0)
-            .font_weight(Weight::SEMIBOLD)
-            .padding_vert(2.0)
-            .border_color(theme().bd)
-    }),))
-    .style(|s| s.flex_col().flex_grow(1.0).min_height(0));
-
-    let create_project_button = label(|| "Create Project")
-        .pipe(container)
+pub fn vnav_icon(
+    view: impl View + 'static,
+    screen: RwSignal<ApplicationScreen>,
+    when: ApplicationScreen,
+) -> views::Container {
+    container(view)
         .style(move |s| {
-            s.width_full()
-                .min_height(0)
-                .flex_row()
-                .justify_center()
-                .padding_horiz(10.0)
-                .padding_vert(8.0)
-                .font_weight(Weight::SEMIBOLD)
-                .background(theme().bg_plus)
-                .apply_if(selection_state.get().which_template.is_some(), |s| {
-                    s.background(theme().accent_dim)
-                        .hover(|s| s.background(theme().accent))
-                })
-                .border_radius(5.0)
-        })
-        .pipe(|view| {
-            tooltip(view, || {
-                label(|| "First, select a template above").style(|s| {
-                    s.color(theme().fg)
-                        .background(theme().bg_plus)
-                        .padding(4.0)
-                        .padding_horiz(10.0)
-                        .border_radius(2.0)
-                })
-            })
-        })
-        .style(|s| s.width_full())
-        .pipe(container)
-        .style(|s| s.width_full().padding_horiz(10.0).padding_vert(2.0));
-
-    let bars = v_stack((side_bar, create_project_button, side_bar_2)).style(|s| {
-        s.height_full()
-            .flex_col()
-            .border_right(1.0)
-            .border_color(theme().bd)
-    });
-    let side_bar = bars;
-
-    // label(move || String::from("Description")).style(|s| {
-    //                 s.padding(10.0)
-    //                     .font_size(18.0)
-    //                     .font_weight(Weight::SEMIBOLD)
-    //             }),
-    //             label(move || description.get()).style(move |s| s.max_width_full())
-
-    let project_name = create_rw_signal(Default::default());
-
-    let _main_window = create_project_menu(project_name);
-
-    let main_window = construct_nixpkgs_search();
-    let main_window = main_window
-        .pipe(scroll)
-        .style(|s| {
-            s.flex_col()
-                .border_horiz(1.0)
-                .gap(0.0, 20.0)
-                .padding_horiz(15.0)
+            s.border_radius(7.0)
                 .border_color(theme().bd)
-                .min_height_full()
-                .padding_top(15.0)
-                .items_center()
-                .width_full()
-                .padding_bottom(10.0)
-                .max_width(580)
-        })
-        .pipe(container)
-        .style(|s| {
-            s.flex_col()
-                .flex_basis(0)
+                .border(1.0)
                 .min_width(0)
-                .flex_grow(1.0)
-                .border_top(1.0)
-                .items_center()
-                .border_color(theme().bd)
                 .width_full()
-        });
-
-    let content = h_stack((side_bar, main_window)).style(|s| {
-        s.position(Position::Absolute)
-            .inset_top(TOPBAR_HEIGHT)
-            .inset_bottom(0.0)
-            .width_full()
-    });
-
-    let view = v_stack((top_bar, content))
-        .style(|s| s.width_full().height_full())
-        .window_title(|| "NixOS Brewer".to_owned());
-
-    let id = view.id();
-    view.keyboard_navigatable()
-        .on_event_stop(EventListener::KeyUp, move |e| {
-            if let Event::KeyUp(e) = e {
-                let key = e.key.physical_key;
-                if key == KeyCode::KeyI && e.modifiers.super_key() {
-                    id.inspect();
-                }
-                if key == KeyCode::KeyW && e.modifiers.super_key() {
-                    quit_app();
-                }
-                // if e.key.logical_key == Key::Named() {
-                // id.inspect();
-                // }
-            }
+                .aspect_ratio(1.0)
+                .flex()
+                .items_center()
+                .apply_if(screen.get() == when, |s| {
+                    s.background(theme().accent.with_alpha_factor(0.2))
+                })
+                .justify_center()
         })
+        .on_click_stop(move |_s| screen.set(when))
 }
 
-#[derive(Clone)]
-pub enum NixEnvPackageKind {
-    // idea is that some day, we
-    // may support adding python or
-    // R or a whole host of other packages,
-    // and those are not simple, because they have
-    // parenting.
-    Simple,
-}
+// #[cfg(not(debug_assertions))]
+// pub fn instr!(tr: String) -> String {}
+pub fn vnav() -> impl View {
+    const SVG_SIZE: f32 = 31.0;
 
-#[derive(Clone)]
-pub struct NixEnvPackage {
-    human_name: String,
-    nix_name: String,
-    version: String,
-    kind: NixEnvPackageKind,
-}
+    let active_view = create_rw_signal(ApplicationScreen::Search);
 
-impl NixEnvPackage {
-    fn simple_from_strs(human_name: &str, nix_name: &str, version: &str) -> Self {
-        Self {
-            human_name: human_name.to_owned(),
-            nix_name: nix_name.to_owned(),
-            version: version.to_owned(),
-            kind: NixEnvPackageKind::Simple,
-        }
-    }
+    let nix_icon = nix_snowflake_svg()
+        .style(|s| s.width(SVG_SIZE).height(SVG_SIZE))
+        .pipe(move |view| vnav_icon(view, active_view, ApplicationScreen::Home))
+        .style(|s| s.padding_top(3.0).padding_left(1.0));
+    let search_icon = views::svg(|| instr!("../assets/search-vnav.svg").to_owned())
+        .style(|s| s.width(SVG_SIZE / 1.5).height(SVG_SIZE / 1.5))
+        .pipe(move |view| vnav_icon(view, active_view, ApplicationScreen::Search));
+    let gap = views::empty().style(|s| s.width_full().border(1.0).border_color(theme().bd));
+
+    let help_icon = views::svg(|| instr!("../assets/help-vnav.svg").to_owned())
+        .style(|s| s.width(10.0).height(SVG_SIZE / 1.5))
+        .pipe(move |view| vnav_icon(view, active_view, ApplicationScreen::Docs));
+
+    v_stack((nix_icon, gap, search_icon, help_icon)).style(|s| {
+        s.background(theme().bg_minus)
+            .width(80.0)
+            .min_width(80.0)
+            .border_right(0.75)
+            .border_color(theme().bd)
+            .padding_horiz(12.0)
+            .padding_top(38.0)
+            .gap(0.0, 10.0)
+    })
 }
 
 pub fn nixpkgs_search_window() -> impl View {
-    let main_window = construct_nixpkgs_search().pipe(container).style(|s| {
-        s.width_full()
-            .height_full()
-            .flex()
-            .flex_row()
-            .justify_center()
-            .min_height(0)
+    const TOPBAR_HEIGHT: f64 = 32.0;
+    let outer_mode = create_rw_signal(ApplicationMode {
+        with_env: true,
+        screen: ApplicationScreen::Search,
     });
 
-    let nix_env_packages = create_rw_signal(vec![
-        NixEnvPackage::simple_from_strs("cargo", "cargo", "1.74"),
-        NixEnvPackage::simple_from_strs("cargo", "cargo", "1.74"),
-        NixEnvPackage::simple_from_strs("cargo", "cargo", "1.74"),
-        NixEnvPackage::simple_from_strs("cargo", "cargo", "1.74"),
-        NixEnvPackage::simple_from_strs("cargo", "cargo", "1.74"),
-        NixEnvPackage::simple_from_strs("cargo", "cargo", "1.74"),
-        NixEnvPackage::simple_from_strs("cargo", "cargo", "1.74"),
-    ]);
+    let environ = create_rw_signal({
+        let mut env = env::EnvironmentEntries::default();
+        env.push_simple("cargo");
+        env.push_simple("gleam");
+        env.push_simple("just");
+        env
+    });
 
-    const TOPBAR_HEIGHT: f64 = 38.0;
-    let top_bar = drag_window_area(views::empty())
-        .style(|s| s.width_full().height(TOPBAR_HEIGHT).justify_between());
-    let environment = static_label("Environment".to_owned()).style(|s| s.font_weight(Weight::BOLD));
+    let active_package_receiver = THREAD_SEARCHER.create_channel_from_receiver();
+    let view = dyn_container(
+        move || outer_mode.get(),
+        move |mode| {
+            let main_window = construct_nixpkgs_search(active_package_receiver)
+                .pipe(container)
+                .style(|s| {
+                    s.width_full()
+                        .height_full()
+                        .flex()
+                        .flex_row()
+                        .justify_center()
+                        .min_height(0)
+                });
 
-    let num_packages = label(move || nix_env_packages.get().len())
-        .style(|s| s.font_weight(Weight::BOLD).font_size(10.0))
-        .pipe(container)
-        .style(|s| {
-            s.border_radius(9999.9)
-                .background(theme().bg_plus2)
-                .flex()
-                .flex_row()
-                .items_center()
-                .justify_center()
-        });
-
-    let expansion = static_label("^")
-        .style(|s| s.font_weight(Weight::BOLD).font_size(10.0))
-        .pipe(container)
-        .style(|s| {
-            s.flex_row()
-                .padding_horiz(10.0)
-                .border_radius(5)
-                .border(1.0)
-                .border_color(theme().bd)
-                .flex()
-                .items_center()
-                .justify_center()
-                .background(theme().bg_plus2)
-                .margin_left(100.0)
-        });
-
-    let dep_stack = dyn_stack(
-        move || nix_env_packages.get().into_iter().enumerate(),
-        move |(i, _)| *i,
-        move |(_, v)| {
-            v_stack((
-                label(move || v.human_name.clone())
-                    .style(|s| s.font_weight(Weight::BOLD).font_size(16.0)),
-                label(move || v.version.clone()),
-            ))
-            .style(|s| {
-                s.border_radius(7)
-                    .padding_vert(4.0)
-                    .border(0.5)
+            let close_button = if mode.with_env {
+                views::svg(|| instr!("../assets/close-button.svg").to_owned())
+                    .style(|s| s.width(8.0).height(8.0))
+                    .pipe(container)
+                    .style(|s| {
+                        s.padding(4.0)
+                            .border_radius(4.0)
+                            .background(theme().fg.with_alpha_factor(0.1))
+                            .border(0.25)
+                            .margin_right(15.0)
+                            .border_color(theme().bd)
+                    })
+                    .on_click_stop(move |_| {
+                        outer_mode.update(|mode| mode.with_env = !mode.with_env)
+                    })
+            } else {
+                container(views::empty())
+            };
+            let top_bar_env_active_content = (
+                static_label("Environment")
+                    .pipe(container)
+                    .style(move |s| {
+                        s.padding_horiz(15.0)
+                            .font_weight(Weight::BOLD)
+                            .height_full()
+                            .items_center()
+                            .justify_center()
+                    })
+                    .on_click_stop(move |_| {
+                        if !mode.with_env {
+                            outer_mode.update(|mode| mode.with_env = true)
+                        }
+                    }),
+                close_button,
+            )
+                .pipe(h_stack)
+                .style(move |s| {
+                    s.justify_between()
+                        .items_center()
+                        .apply_if(mode.with_env, |s| s.min_width(240))
+                        .background(theme().bg_minus)
+                });
+            let top_bar_content =
+                h_stack((top_bar_env_active_content,)).style(|s| s.width_full().height_full());
+            let top_bar = drag_window_area(top_bar_content)
+                .style(|s| s.width_full().min_height(TOPBAR_HEIGHT).justify_between());
+            let env_view = env::EnvironmentEntries::view(environ).style(|s| {
+                s.min_width(240)
+                    .height_full()
+                    .min_height(0)
+                    .background(theme().bg_minus)
+                    .border_right(1.0)
+                    .border_top(1.0)
                     .border_color(theme().bd)
-                    .padding_left(10.0)
-                    .background(theme().bg_plus)
-            })
+            });
+            if mode.with_env {
+                let view = v_stack((
+                    top_bar,
+                    h_stack((env_view, main_window))
+                        .style(|s| s.height_full().min_height(0).flex_grow(1.0)),
+                ))
+                .style(|s| s.width_full().height_full())
+                .window_title(|| "NixOS Brewer".to_owned());
+
+                Box::new(h_stack((vnav(), view)).style(|s| s.width_full()))
+            } else {
+                let view = v_stack((top_bar, main_window))
+                    .style(|s| s.width_full().height_full())
+                    .window_title(|| "NixOS Brewer".to_owned());
+
+                Box::new(h_stack((vnav(), view)).style(|s| s.width_full()))
+            }
         },
-    )
-    .style(|s| {
-        s.background(theme().bg)
-            .padding(4.0)
-            .flex_col()
+    );
+    let view = view.style(|s| {
+        s.min_width(0)
+            .min_height(0)
+            .max_width_full()
+            .max_height_full()
             .width_full()
-            .gap(0.0, 5.0)
-    })
-    .pipe(scroll)
-    .style(|s| s.max_height(120.0));
-    let environment_tab = v_stack((
-        h_stack((environment, num_packages, expansion))
-            .style(|s| {
-                s.width_full()
-                    .background(theme().bg_plus)
-                    .gap(10.0, 0)
-                    .font_size(14.0)
-                    .padding_vert(6.0 * 2.0)
-                    .padding_horiz(10.0 * 2.0)
-            })
-            .style(|s| s.border_bottom(1.0).border_color(theme().bd)),
-        dep_stack,
-    ))
-    .pipe(views::clip)
-    .style(|s| {
-        s.absolute()
-            .inset_bottom(10)
-            .inset_right(100)
-            .border(1.0)
-            .border_color(theme().bd)
-            .border_radius(7.0)
+            .height_full()
     });
-
-    let view = v_stack((top_bar, main_window, environment_tab))
-        .style(|s| s.width_full().height_full())
-        .window_title(|| "NixOS Brewer".to_owned());
-
     let id = view.id();
     view.keyboard_navigatable()
         .on_event_stop(EventListener::KeyUp, move |e| {
@@ -881,10 +759,10 @@ pub fn package_support(support: PackageSupport) -> impl View {
                 static_label("✓").style(|s| s.color(tailwind::color("green-500"))),
                 || static_label("Supported on this system"),
             )),
-            PackageSupport::MostLikelyNot => {
+            PackageSupport::NoneListed => {
                 Box::new(static_label("?").style(|s| s.color(tailwind::color("yellow-500"))))
             }
-            PackageSupport::NoneListed => Box::new(static_label("✕").style(|s| {
+            PackageSupport::MostLikelyNot => Box::new(static_label("✕").style(|s| {
                 s.color(tailwind::color("red-500"))
                     .font_weight(Weight::BOLD)
             })),
@@ -892,7 +770,7 @@ pub fn package_support(support: PackageSupport) -> impl View {
     )
 }
 
-fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> impl View {
+fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
     static PYTHON_REGEX: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"python[0-9_]+Packages\.").unwrap());
     dyn_stack(
@@ -900,22 +778,16 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
         |key| key.2.clone(),
         move |(_sel, idx, each)| {
             let version = each.package_pversion.clone();
-            let support = each.available_on_this_system();
+            let support = available_on_this_system(&each);
             let card_name = each.package_attr_name;
 
             let card_name_view = |card_name| {
-                static_label(card_name).style(|s| {
-                    style::h3(s)
-                        .min_width(0)
-                        .flex_grow(1.0)
-                        .max_width_full()
-                        .font_size(14.0)
-                })
+                static_label(card_name).style(|s| style::h3(s).min_width(0).font_size(14.0))
             };
 
-            let text_node = if PYTHON_REGEX.is_match(&card_name) {
+            let title_node = if PYTHON_REGEX.is_match(&card_name) {
                 h_stack((
-                    views::svg(|| include_str!("../assets/python-logo-only.svg").to_owned())
+                    views::svg(|| instr!("../assets/python-logo-only.svg").to_owned())
                         .style(|s| s.height(14.0).width(14.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -923,7 +795,7 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
                 .pipe(container_box)
             } else if card_name.starts_with("rPackages.") {
                 h_stack((
-                    views::svg(|| include_str!("../assets/r-logo.svg").to_owned())
+                    views::svg(|| instr!("../assets/r-logo.svg").to_owned())
                         .style(|s| s.height(18.0).width(18.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -931,7 +803,7 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
                 .pipe(container_box)
             } else if card_name.starts_with("haskellPackages.") {
                 h_stack((
-                    views::svg(|| include_str!("../assets/haskell-logo.svg").to_owned())
+                    views::svg(|| instr!("../assets/haskell-logo.svg").to_owned())
                         .style(|s| s.height(18.0).width(18.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -939,7 +811,7 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
                 .pipe(container_box)
             } else if card_name.starts_with("linuxKernel.") {
                 h_stack((
-                    views::svg(|| include_str!("../assets/tux.svg").to_owned())
+                    views::svg(|| instr!("../assets/tux.svg").to_owned())
                         .style(|s| s.height(18.0).width(18.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -947,7 +819,7 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
                 .pipe(container_box)
             } else if card_name.starts_with("vscode-extensions.") {
                 h_stack((
-                    views::svg(|| include_str!("../assets/vscode-alt.svg").to_owned())
+                    views::svg(|| instr!("../assets/vscode.svg").to_owned())
                         .style(|s| s.height(14.0).width(14.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -959,8 +831,29 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
 
             let description = each.package_description;
 
+            let add_package = static_label("Select").style(move |s| {
+                s.padding_vert(4.0)
+                    .padding_horiz(10.0)
+                    // .outline(2.0)
+                    // .outline_color(theme().accent)
+                    .background(theme().accent)
+                    .apply_if(matches!(support, PackageSupport::Supported), move |s| {
+                        s.background(theme().accent)
+                    })
+                    .apply_if(matches!(support, PackageSupport::MostLikelyNot), move |s| {
+                        s.background(tailwind::color("red-700"))
+                    })
+                    .apply_if(matches!(support, PackageSupport::NoneListed), move |s| {
+                        s.background(tailwind::color("green-700"))
+                    })
+                    .color(theme().fg_on_accent)
+                    .border_radius(Pct(100.0))
+                    .z_index(40)
+                    .font_size(9.0)
+                    .font_weight(Weight::SEMIBOLD)
+            });
             let version_line = (
-                views::svg(|| include_str!("../assets/home.svg").to_owned())
+                views::svg(|| instr!("../assets/home.svg").to_owned())
                     .style(|s| s.width(10.).height(10.))
                     .pipe(container)
                     .style(|s| {
@@ -974,17 +867,31 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
                     .on_click_stop(move |_| {
                         each.package_homepage.get(0).map(|t| open::that(t));
                     }),
-                static_label(version).style(style::text_hint),
-                package_support(support),
+                // static_label(version).style(style::text_hint),
+                // package_support(support),
+                add_package,
             )
                 .pipe(h_stack)
                 .style(|s| s.flex_row().gap(10.0, 0.0).align_items(AlignItems::Center));
 
-            let top_line = (text_node, version_line)
+            let title_side = (
+                title_node,
+                static_label(format!("Version {version}"))
+                    .style(|s| {
+                        s.font_weight(Weight::SEMIBOLD)
+                            .font_size(10.0)
+                            .color(theme().fg_minus)
+                    })
+                    .pipe(container)
+                    .style(|s| s.margin_left(10.0).margin_top(-4.0)),
+            )
+                .pipe(v_stack)
+                .style(|s| s.gap(0.0, 0.0));
+            let top_line = (title_side, version_line)
                 .pipe(h_stack)
                 .style(|s| s.flex_row().justify_between().flex_grow(1.0).items_center());
 
-            let description = static_label(description);
+            let description = static_label(description.unwrap_or_default());
 
             // let versions_label = static_label("Versions").style(|s| {
             //     s.font_weight(Weight::BOLD)
@@ -1044,11 +951,11 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
             .style(|s| s.flex_wrap(FlexWrap::Wrap).width_full());
 
             let program_section = v_stack((
-                static_label(if number_of_binaries == 0 {
-                    "No Binaries Provided"
+                if number_of_binaries != 0 {
+                    Box::new(static_label("Binaries Provided"))
                 } else {
-                    "Binaries"
-                })
+                    Box::new(views::empty()) as Box<dyn View>
+                }
                 .style(|s| {
                     s.font_weight(Weight::BOLD)
                         .padding_bottom(5.0)
@@ -1057,32 +964,7 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
                 programs_provided,
             ));
 
-            let add_package = dyn_container(
-                move || selected.get(),
-                move |s| {
-                    if s.is_selected(idx) {
-                        static_label(format!("Install {}", each.package_pversion))
-                            .style(|s| {
-                                s.padding_vert(4.0)
-                                    .padding_horiz(10.0)
-                                    .outline(2.0)
-                                    .outline_color(tailwind::color("slate-500"))
-                                    .background(Color::rgb8(45, 45, 45))
-                                    .border_radius(Pct(100.0))
-                                    .z_index(40)
-                                    .font_size(9.0)
-                                    .font_weight(Weight::SEMIBOLD)
-                            })
-                            .pipe(Box::new)
-                    } else {
-                        views::empty().pipe(Box::new)
-                    }
-                },
-            )
-            .style(|s| s.absolute().inset_right(20.0).inset_top(-10.0));
-
             (
-                add_package,
                 top_line,
                 description,
                 // versions_section,
@@ -1095,9 +977,9 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
                         .border(1.0)
                         .gap(0.0, 15.0)
                         .border_color(theme().bd)
-                        .apply_if(selected.get().is_selected(idx), |s| {
-                            s.outline(2.0).outline_color(tailwind::color("slate-500"))
-                        })
+                        // .apply_if(selected.get().is_selected(idx), |s| {
+                        //     s.outline(2.0).outline_color(theme().accent)
+                        // })
                         .min_width(0)
                         .padding(15.0)
                         .padding_top(4.0)
@@ -1107,7 +989,7 @@ fn search_result_card(selected: RwSignal<Selectable<PackageSearchValue>>) -> imp
                 .on_click_stop(move |_| selected.update(|s| s.select(idx)))
         },
     )
-    .style(|s| s.min_width(0))
+    .style(|s| s.min_width(0).width_full().flex_grow(1.0))
 }
 
 #[derive(Clone, Debug)]
@@ -1180,7 +1062,7 @@ impl Channels {
 }
 
 pub static THREAD_SEARCHER: Lazy<
-    ActorThread<(String, SearchProperties), Result<Selectable<PackageSearchValue>, String>>,
+    ActorThread<(String, SearchProperties), Result<Selectable<NixPackage>, String>>,
 > = Lazy::new(|| {
     ActorThread::new(
         |(search_text, search_props): (String, SearchProperties)| match search::search(
@@ -1306,7 +1188,9 @@ fn loading_widget() -> impl View {
     .style(|s| s.gap(3.0, 0.0))
 }
 
-fn construct_nixpkgs_search() -> impl View {
+fn construct_nixpkgs_search(
+    active_package_receiver: ReadSignal<Option<Result<Selectable<NixPackage>, String>>>,
+) -> impl View {
     let search_text = create_rw_signal(String::new());
     let active_packages = create_rw_signal(Selectable::new());
     let searching_state = create_rw_signal(SearchingState::Idle);
@@ -1315,8 +1199,6 @@ fn construct_nixpkgs_search() -> impl View {
         mode: SearchMode::Name,
         channel: 1,
     });
-
-    let active_package_receiver = THREAD_SEARCHER.create_channel_from_receiver();
     create_effect(move |_| {
         if let Some(pkg) = active_package_receiver.get() {
             match pkg {
@@ -1378,14 +1260,20 @@ fn construct_nixpkgs_search() -> impl View {
                 .padding_horiz(15.0)
         })
         .placeholder("Search for packages")
-        .on_event_stop(EventListener::KeyDown, move |e| {
+        .on_event(EventListener::KeyDown, move |e| {
             if let Event::KeyDown(ev) = e {
                 if ev.key.logical_key == Key::Named(NamedKey::Enter) {
                     search_init.notify();
                 }
+
+                if ev.key.physical_key == KeyCode::KeyW && ev.modifiers.super_key() {
+                    quit_app();
+                }
             }
+            EventPropagation::Stop
         });
 
+    search.id().request_focus();
     let style_func = |s: Style| {
         s.font_weight(Weight::BOLD)
             .padding_vert(8.0)
@@ -1446,16 +1334,15 @@ fn construct_nixpkgs_search() -> impl View {
 
     let search_section = (title, search, choose_mode)
         .pipe(v_stack)
-        .style(|s| s.gap(0.0, 15.0));
+        .style(|s| s.gap(0.0, 15.0).min_width(0));
 
     let results_section = views::dyn_container(
         move || searching_state.get(),
         move |s| match s {
             SearchingState::Idle => {
-                let nix_repo_svg =
-                    views::svg(|| include_str!("../assets/nix-repro.svg").to_owned())
-                        .style(|s| s.width(125).aspect_ratio(1.0).margin_bottom(15.0));
-                let label = static_label("Search over 80,000 packages")
+                let nix_repo_svg = views::svg(|| instr!("../assets/nix-repro.svg").to_owned())
+                    .style(|s| s.width(125).aspect_ratio(1.0).margin_bottom(15.0));
+                let label = static_label("Search more than 80,000 packages")
                     .style(|s| s.font_weight(Weight::NORMAL).font_size(14.0));
                 let label_top = static_label("Reproducible. Declarative. Reliable.")
                     .style(|s| s.font_weight(Weight::BOLD).font_size(18.0));
@@ -1490,14 +1377,24 @@ fn construct_nixpkgs_search() -> impl View {
             SearchingState::ResultsAvailable => search_result_card(active_packages)
                 .style(|s| s.flex_col().gap(0, 10).min_width(0))
                 .pipe(container)
-                .style(|s| s.padding(10.0).min_width(0))
+                .style(|s| {
+                    s.padding_vert(15.0)
+                        .padding_left(0.0)
+                        .padding_right(12.0)
+                        .min_width(0)
+                        .width_full()
+                })
                 .pipe(scroll)
-                .style(|s| s.min_height(0).max_height_full().max_width_full())
+                .style(|s| {
+                    s.min_height(0)
+                        .max_height_full()
+                        .max_width_full()
+                        .width_full()
+                })
                 .pipe(Box::new),
             SearchingState::NoResultsAvailable => {
-                let nix_repo_svg =
-                    views::svg(|| include_str!("../assets/nix-repro.svg").to_owned())
-                        .style(|s| s.width(125).aspect_ratio(1.0));
+                let nix_repo_svg = views::svg(|| instr!("../assets/nix-repro.svg").to_owned())
+                    .style(|s| s.width(125).aspect_ratio(1.0));
                 let label = static_label(
                     "We searched far and wide, but no trace of your query was found :(",
                 )
@@ -1534,24 +1431,18 @@ fn construct_nixpkgs_search() -> impl View {
                 .pipe(Box::new),
         },
     )
-    .style(|s| {
-        s.flex()
-            .flex_grow(1.0)
-            .min_width(0)
-            .min_height(0)
-            .width(420.0)
-    });
+    .style(|s| s.flex().flex_grow(1.0).min_width(0).min_height(0));
     (search_section, results_section).pipe(v_stack).style(|s| {
         s.gap(0.0, 10.0)
-            .width(420.0)
             .min_width(0)
             .min_height(0)
-            .flex_shrink(0.0)
+            .flex_grow(1.0)
+            .max_width(420.0)
     })
 }
 
 fn nix_snowflake_svg() -> views::Svg {
-    views::svg(|| include_str!("../assets/Nix_snowflake.svg").to_owned())
+    views::svg(|| instr!("../assets/Nix_snowflake.svg").to_owned())
 }
 
 fn create_project_menu(project_name: RwSignal<String>) -> impl View {
@@ -1617,7 +1508,7 @@ fn create_project_menu(project_name: RwSignal<String>) -> impl View {
             list_selection(
                 || false,
                 || item.to_owned(),
-                Icon::Svg(Cow::Borrowed(include_str!("../assets/folder-white.svg"))),
+                Icon::Svg(Cow::Borrowed(instr!("../assets/folder-white.svg"))),
                 |s| s.padding_horiz(10.0),
             )
             .style(|s| s.border(1.0).border_color(theme().bd))
@@ -1662,164 +1553,37 @@ fn create_project_menu(project_name: RwSignal<String>) -> impl View {
     ))
     .style(|s| s.gap(0.0, 10.0))
 }
-mod tailwindcss {
-
-    use bstr::WordsWithBreaks;
-    use crossbeam::channel::{Receiver, Sender};
-
-    use floem::{
-        cosmic_text::Weight,
-        ext_event::create_signal_from_channel,
-        reactive::{ReadSignal, RwSignal},
-        style::Style,
-    };
-    use once_cell::sync::Lazy;
-
-    use crate::tailwind;
-
-    fn tailwind_thread(send: Sender<usize>) {
-        let mut count = 0;
-        loop {
-            send.send(count).unwrap();
-            count += 1;
-            inline_tweak::watch!();
-        }
-    }
-    pub fn style_effect() -> ReadSignal<Option<usize>> {
-        static RECV: Lazy<ReadSignal<Option<usize>>> = Lazy::new(|| {
-            let (send, recv) = crossbeam::channel::unbounded();
-            std::thread::spawn(|| tailwind_thread(send));
-            create_signal_from_channel(recv)
-        });
-        *RECV
-    }
-
-    // this is going to be incredibly stupid
-    // implementation. here goes.
-    fn read_pixels<F: Fn(Style, f32) -> Style>(section: &str, style: Style, f: F) -> Style {
-        if let Some((_, end)) = section.split_once("-") {
-            if let Ok(end) = end.parse::<u16>() {
-                return f(style.clone(), end as f32);
-            }
-        }
-        return style;
-    }
-    pub fn parse_tailwind(input: String, style: floem::style::Style) -> floem::style::Style {
-        let sections = input.split(" ");
-        let mut style = style;
-        for section in sections {
-            match section {
-                "flex" => {
-                    style = style.flex();
-                }
-                "flex-row" => {
-                    style = style.flex_row();
-                }
-                "flex-col" => {
-                    style = style.flex_col();
-                }
-                "semibold" => {
-                    style = style.font_weight(Weight::SEMIBOLD);
-                }
-                "bold" => {
-                    style = style.font_weight(Weight::BOLD);
-                }
-                "extra-bold" => {
-                    style = style.font_weight(Weight::EXTRA_BOLD);
-                }
-                "thin" => {
-                    style = style.font_weight(Weight::THIN);
-                }
-                "medium" => {
-                    style = style.font_weight(Weight::MEDIUM);
-                }
-                "extra-light" => {
-                    style = style.font_weight(Weight::LIGHT);
-                }
-                _ => {}
-            };
-            let chars = section.chars().collect::<Vec<_>>();
-            style = match chars.as_slice() {
-                ['p', '-', ..] => read_pixels(section, style, Style::padding),
-                ['p', 'x', '-', ..] => read_pixels(section, style, Style::padding_horiz),
-                ['p', 'y', '-', ..] => read_pixels(section, style, Style::padding_vert),
-                ['p', 't', '-', ..] => read_pixels(section, style, Style::padding_top),
-                ['p', 'b', '-', ..] => read_pixels(section, style, Style::padding_bottom),
-                ['p', 'l', '-', ..] => read_pixels(section, style, Style::padding_left),
-                ['p', 'r', '-', ..] => read_pixels(section, style, Style::padding_right),
-                ['m', '-', ..] => read_pixels(section, style, Style::margin_horiz),
-                ['m', 'x', '-', ..] => read_pixels(section, style, Style::margin_vert),
-                ['m', 'y', '-', ..] => read_pixels(section, style, Style::margin_top),
-                ['m', 't', '-', ..] => read_pixels(section, style, Style::margin_bottom),
-                ['m', 'b', '-', ..] => read_pixels(section, style, Style::margin_left),
-                ['m', 'l', '-', ..] => read_pixels(section, style, Style::margin_right),
-                ['m', 'r', '-', ..] => read_pixels(section, style, Style::margin_right),
-                ['r', 'o', 'u', 'n', 'd', 'e', 'd', '-', ..] => {
-                    read_pixels(section, style, Style::border_radius)
-                }
-                ['b', 'g', '-', ..] => {
-                    let color_only = section.trim_start_matches("bg-");
-                    let split = color_only.split_once('/');
-                    if let Some((color, end)) = split {
-                        if let (Ok(end), Some(color)) =
-                            (end.parse::<u16>(), tailwind::COLOR_MAP.get(color))
-                        {
-                            style.background(color.clone().with_alpha_factor(end as f32 / 100.0))
-                        } else {
-                            style
-                        }
-                    } else {
-                        match tailwind::COLOR_MAP.get(color_only) {
-                            Some(color) => style.background(color.clone()),
-                            None => style,
-                        }
-                    }
-                }
-                _ => {
-                    println!("warning unrecoginzed style: {section}");
-                    style
-                }
-            };
-        }
-        style
-    }
-
-    pub fn tw(
-        string: &str,
-        signal: ReadSignal<Option<usize>>,
-    ) -> impl Fn(floem::style::Style) -> floem::style::Style {
-        dbg!(signal.get());
-        let owned = string.to_owned();
-        move |style| (dbg!(parse_tailwind(owned.clone(), style)))
-    }
-}
 
 fn main() -> Result<(), ProgramError> {
-    println!("{}", search::nix_system());
-    let sources = [
-        "github:akirak/flake-templates",
-        "github:andystopia/nix-templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-        "github:NixOS/templates",
-    ]
-    .map(nix_templates)
-    .into_iter()
-    .collect::<Result<Vec<NixTemplates>, _>>()?;
+    // std::fs::write(
+    //     concat!(env!("CARGO_MANIFEST_DIR"), "/opened.txt"),
+    //     "opened!",
+    // );
+    // // println!("{}", search::nix_system());
+    // let sources = [
+    //     "github:akirak/flake-templates",
+    //     "github:andystopia/nix-templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    //     "github:NixOS/templates",
+    // ]
+    // .map(nix_templates)
+    // .into_iter()
+    // .collect::<Result<Vec<NixTemplates>, _>>()?;
 
     // dbg!(nix_flake_init(
     //     "github:andystopia/nix-templates",

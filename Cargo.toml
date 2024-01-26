@@ -2,7 +2,7 @@
 name = "newt"
 version = "0.1.0"
 edition = "2021"
-
+description = "Elastic Search the Nixpkgs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -21,8 +21,21 @@ crossbeam = { version = "0.8.3", features = ["crossbeam-channel"] }
 strsim = "0.10.0"
 ordered-float = "4.2.0"
 url = "2.5.0"
-scraper = "0.18.1"
-reqwest = { version = "0.11.23", features = ["blocking"] }
 regex = "1.10.2"
 open = "5.0.1"
-nix-elastic-search = {git = "https://github.com/andystopia/nix-elastic-search.git", rev="8d90734fbaedb6c77df414c23b2401685fb46cd1"}
+nix-elastic-search = {git = "https://github.com/andystopia/nix-elastic-search.git"}
+
+[package.metadata.bundle]
+name = "Newt3"
+identifier = "com.andystopia.newt"
+icon = ["assets/32x32.png", "assets/128x128.png"]
+version = "0.1.0"
+resources = ["assets"]
+copyright = "Copyright (c) Andrew Day 2024. All rights reserved."
+category = "Developer Tool"
+short_description = "Search Nixpkgs."
+long_description = """
+  Search nixpkgs using a search tool like the weblike UI, though,
+  this tool aspires to be one day much more than that.
+"""
+osx_url_schemes = ["com.andystopia.newt"]
