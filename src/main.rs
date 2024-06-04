@@ -623,60 +623,60 @@ pub fn nixpkgs_search_window() -> impl View {
             } else {
                 container(views::empty())
             };
-            let top_bar_env_active_content = (
-                static_label("Environment")
-                    .pipe(container)
-                    .style(move |s| {
-                        s.padding_horiz(15.0)
-                            .font_weight(Weight::BOLD)
-                            .height_full()
-                            .items_center()
-                            .justify_center()
-                    })
-                    .on_click_stop(move |_| {
-                        if !mode.with_env {
-                            outer_mode.update(|mode| mode.with_env = true)
-                        }
-                    }),
-                close_button,
-            )
-                .pipe(h_stack)
-                .style(move |s| {
-                    s.justify_between()
-                        .items_center()
-                        .apply_if(mode.with_env, |s| s.min_width(240))
-                        .background(theme().bg_minus)
-                });
-            let top_bar_content =
-                h_stack((top_bar_env_active_content,)).style(|s| s.width_full().height_full());
-            let top_bar = drag_window_area(top_bar_content)
+            // let top_bar_env_active_content = (
+            //     static_label("Environment")
+            //         .pipe(container)
+            //         .style(move |s| {
+            //             s.padding_horiz(15.0)
+            //                 .font_weight(Weight::BOLD)
+            //                 .height_full()
+            //                 .items_center()
+            //                 .justify_center()
+            //         })
+            //         .on_click_stop(move |_| {
+            //             if !mode.with_env {
+            //                 outer_mode.update(|mode| mode.with_env = true)
+            //             }
+            //         }),
+            //     close_button,
+            // )
+            //     .pipe(h_stack)
+            //     .style(move |s| {
+            //         s.justify_between()
+            //             .items_center()
+            //             .apply_if(mode.with_env, |s| s.min_width(240))
+            //             .background(theme().bg_minus)
+            //     });
+            // let top_bar_content =
+            //     h_stack((top_bar_env_active_content,)).style(|s| s.width_full().height_full());
+            let top_bar = drag_window_area(views::empty())
                 .style(|s| s.width_full().min_height(TOPBAR_HEIGHT).justify_between());
-            let env_view = env::EnvironmentEntries::view(environ).style(|s| {
-                s.min_width(240)
-                    .height_full()
-                    .min_height(0)
-                    .background(theme().bg_minus)
-                    .border_right(1.0)
-                    .border_top(1.0)
-                    .border_color(theme().bd)
-            });
-            if mode.with_env {
-                let view = v_stack((
-                    top_bar,
-                    h_stack((env_view, main_window))
-                        .style(|s| s.height_full().min_height(0).flex_grow(1.0)),
-                ))
+            // let env_view = env::EnvironmentEntries::view(environ).style(|s| {
+            //     s.min_width(240)
+            //         .height_full()
+            //         .min_height(0)
+            //         .background(theme().bg_minus)
+            //         .border_right(1.0)
+            //         .border_top(1.0)
+            //         .border_color(theme().bd)
+            // });
+            // if mode.with_env {
+            //     let view = v_stack((
+            //         top_bar,
+            //         h_stack((env_view, main_window))
+            //             .style(|s| s.height_full().min_height(0).flex_grow(1.0)),
+            //     ))
+            //     .style(|s| s.width_full().height_full())
+            //     .window_title(|| "NixOS Brewer".to_owned());
+
+            //     Box::new(h_stack((vnav(), view)).style(|s| s.width_full()))
+            // } else {
+            let view = v_stack((top_bar, main_window))
                 .style(|s| s.width_full().height_full())
                 .window_title(|| "NixOS Brewer".to_owned());
 
-                Box::new(h_stack((vnav(), view)).style(|s| s.width_full()))
-            } else {
-                let view = v_stack((top_bar, main_window))
-                    .style(|s| s.width_full().height_full())
-                    .window_title(|| "NixOS Brewer".to_owned());
-
-                Box::new(h_stack((vnav(), view)).style(|s| s.width_full()))
-            }
+            Box::new(view.style(|s| s.width_full()))
+            // }
         },
     );
     let view = view.style(|s| {
@@ -831,27 +831,27 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
 
             let description = each.package_description;
 
-            let add_package = static_label("Select").style(move |s| {
-                s.padding_vert(4.0)
-                    .padding_horiz(10.0)
-                    // .outline(2.0)
-                    // .outline_color(theme().accent)
-                    .background(theme().accent)
-                    .apply_if(matches!(support, PackageSupport::Supported), move |s| {
-                        s.background(theme().accent)
-                    })
-                    .apply_if(matches!(support, PackageSupport::MostLikelyNot), move |s| {
-                        s.background(tailwind::color("red-700"))
-                    })
-                    .apply_if(matches!(support, PackageSupport::NoneListed), move |s| {
-                        s.background(tailwind::color("green-700"))
-                    })
-                    .color(theme().fg_on_accent)
-                    .border_radius(Pct(100.0))
-                    .z_index(40)
-                    .font_size(9.0)
-                    .font_weight(Weight::SEMIBOLD)
-            });
+            // let add_package = static_label("Select").style(move |s| {
+            //     s.padding_vert(4.0)
+            //         .padding_horiz(10.0)
+            //         // .outline(2.0)
+            //         // .outline_color(theme().accent)
+            //         .background(theme().accent)
+            //         .apply_if(matches!(support, PackageSupport::Supported), move |s| {
+            //             s.background(theme().accent)
+            //         })
+            //         .apply_if(matches!(support, PackageSupport::MostLikelyNot), move |s| {
+            //             s.background(tailwind::color("red-700"))
+            //         })
+            //         .apply_if(matches!(support, PackageSupport::NoneListed), move |s| {
+            //             s.background(tailwind::color("green-700"))
+            //         })
+            //         .color(theme().fg_on_accent)
+            //         .border_radius(Pct(100.0))
+            //         .z_index(40)
+            //         .font_size(9.0)
+            //         .font_weight(Weight::SEMIBOLD)
+            // });
             let version_line = (
                 views::svg(|| instr!("../assets/home.svg").to_owned())
                     .style(|s| s.width(10.).height(10.))
@@ -869,7 +869,7 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
                     }),
                 // static_label(version).style(style::text_hint),
                 // package_support(support),
-                add_package,
+                // add_package,
             )
                 .pipe(h_stack)
                 .style(|s| s.flex_row().gap(10.0, 0.0).align_items(AlignItems::Center));
@@ -1054,7 +1054,7 @@ pub struct Channels {
 impl Channels {
     pub fn new() -> Self {
         Self {
-            opts: ["23.05", "23.11", "unstable"]
+            opts: ["23.05", "23.11", "24.05", "unstable"]
                 .map(ToOwned::to_owned)
                 .to_vec(),
         }
@@ -1197,7 +1197,7 @@ fn construct_nixpkgs_search(
 
     let search_props = create_rw_signal(SearchProperties {
         mode: SearchMode::Name,
-        channel: 1,
+        channel: Channels::new().opts.len() - 2,
     });
     create_effect(move |_| {
         if let Some(pkg) = active_package_receiver.get() {
@@ -1319,11 +1319,16 @@ fn construct_nixpkgs_search(
                     .style(style_func)
                     .style(move |s| s.apply_if(sp.channel == 1, |s| s.background(theme().accent)))
                     .on_click_stop(move |_e| search_props.update(|s| s.channel = 1)),
-                static_label("unstable")
+                static_label("24.05")
                     .pipe(views::container)
                     .style(style_func)
                     .style(move |s| s.apply_if(sp.channel == 2, |s| s.background(theme().accent)))
                     .on_click_stop(move |_e| search_props.update(|s| s.channel = 2)),
+                static_label("unstable")
+                    .pipe(views::container)
+                    .style(style_func)
+                    .style(move |s| s.apply_if(sp.channel == 3, |s| s.background(theme().accent)))
+                    .on_click_stop(move |_e| search_props.update(|s| s.channel = 3)),
             ))
             .style(|s| s.gap(5.0, 0.0).width_full())
             .pipe(Box::new)
@@ -1342,7 +1347,7 @@ fn construct_nixpkgs_search(
             SearchingState::Idle => {
                 let nix_repo_svg = views::svg(|| instr!("../assets/nix-repro.svg").to_owned())
                     .style(|s| s.width(125).aspect_ratio(1.0).margin_bottom(15.0));
-                let label = static_label("Search more than 80,000 packages")
+                let label = static_label("Search 100k+ packages")
                     .style(|s| s.font_weight(Weight::NORMAL).font_size(14.0));
                 let label_top = static_label("Reproducible. Declarative. Reliable.")
                     .style(|s| s.font_weight(Weight::BOLD).font_size(18.0));
