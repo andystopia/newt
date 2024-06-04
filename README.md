@@ -1,21 +1,28 @@
 # Newt
 
-The point of this here is that we want to 
-have a system where I can easily search, compose, and 
-improve the UX of existing nix experiments.
-
-Current struggle. 
-
-Nix flakes are complicated: 
-	- they are a collection of devshells, each devshell is a collection of packages that is named and possibly has a startup script.
-	- they are a collection of build environments, each build environment is a collection of packages and input builds and possibly
-	many build scripts.
-	- We want to be able to "trim the fat", if need be, and have lighter devshells for some circumstances and heavier ones
-	in others. 
-	
+`Newt` is a basic search tool which allows
+you to search nixpkgs without having to use 
+the website. It doesn't use a web render / web view, 
+so it should remain relatively light on resources. 
 
 
-Nix terminology is not obvious what it is, like devshell does not really sound like the description above
-inherently, so I want to simplify it, but I don't want to dumb it down so much that it loses it's flexibility.
+## What's It Look Like?
 
+I tried my best to make it look like a nice native clean MacOS application. 
+
+![](assets/ui-screencapture.png)
+
+
+## Installation. 
+
+I _think_ you can just download, and then type 
+`just` once you have the [justfile command runner](https://github.com/casey/just) installed to install. If you think this belongs in nixpkgs please add. I'm a busy person so I'm not sure how maintained I can keepthis however.
+
+## Does it work?
+
+It works wonderfully (on my machine). I use it everyday.
+
+## Contributions.
+
+As always, PR's welcome :D
 
