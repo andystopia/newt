@@ -70,10 +70,10 @@ impl EnvironmentEntries {
 
 pub fn with_border(view: impl View + 'static, last: bool) -> impl View {
     let src = if last {
-        views::svg(|| instr!("../assets/final-corner.svg").to_owned())
+        views::svg(|| instr!("../../../assets/final-corner.svg").to_owned())
             .style(|s| s.height_full().aspect_ratio(1.0))
     } else {
-        views::svg(|| instr!("../assets/inline-element.svg").to_owned())
+        views::svg(|| instr!("../../../assets/inline-element.svg").to_owned())
             .style(|s| s.height_full().aspect_ratio(1.0))
     };
     floem::views::h_stack((

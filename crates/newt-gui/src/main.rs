@@ -425,7 +425,7 @@ fn flake_list(
         .map(move |(idx, item)| {
             v_stack((
                 h_stack((
-                    views::svg(|| instr!("../assets/github-mark-white.svg").to_owned())
+                    views::svg(|| instr!("../../../assets/github-mark-white.svg").to_owned())
                         .style(|s| s.height(12.0).aspect_ratio(Some(1.0))),
                     label(move || item.clone()),
                 ))
@@ -554,12 +554,12 @@ pub fn vnav() -> impl View {
         .style(|s| s.width(SVG_SIZE).height(SVG_SIZE))
         .pipe(move |view| vnav_icon(view, active_view, ApplicationScreen::Home))
         .style(|s| s.padding_top(3.0).padding_left(1.0));
-    let search_icon = views::svg(|| instr!("../assets/search-vnav.svg").to_owned())
+    let search_icon = views::svg(|| instr!("../../../assets/search-vnav.svg").to_owned())
         .style(|s| s.width(SVG_SIZE / 1.5).height(SVG_SIZE / 1.5))
         .pipe(move |view| vnav_icon(view, active_view, ApplicationScreen::Search));
     let gap = views::empty().style(|s| s.width_full().border(1.0).border_color(theme().bd));
 
-    let help_icon = views::svg(|| instr!("../assets/help-vnav.svg").to_owned())
+    let help_icon = views::svg(|| instr!("../../../assets/help-vnav.svg").to_owned())
         .style(|s| s.width(10.0).height(SVG_SIZE / 1.5))
         .pipe(move |view| vnav_icon(view, active_view, ApplicationScreen::Docs));
 
@@ -606,7 +606,7 @@ pub fn nixpkgs_search_window() -> impl View {
                 });
 
             let close_button = if mode.with_env {
-                views::svg(|| instr!("../assets/close-button.svg").to_owned())
+                views::svg(|| instr!("../../../assets/close-button.svg").to_owned())
                     .style(|s| s.width(8.0).height(8.0))
                     .pipe(container)
                     .style(|s| {
@@ -788,7 +788,7 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
 
             let title_node = if PYTHON_REGEX.is_match(&card_name) {
                 h_stack((
-                    views::svg(|| instr!("../assets/python-logo-only.svg").to_owned())
+                    views::svg(|| instr!("../../../assets/python-logo-only.svg").to_owned())
                         .style(|s| s.height(14.0).width(14.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -796,7 +796,7 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
                 .pipe(container_box)
             } else if card_name.starts_with("rPackages.") {
                 h_stack((
-                    views::svg(|| instr!("../assets/r-logo.svg").to_owned())
+                    views::svg(|| instr!("../../../assets/r-logo.svg").to_owned())
                         .style(|s| s.height(18.0).width(18.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -804,7 +804,7 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
                 .pipe(container_box)
             } else if card_name.starts_with("haskellPackages.") {
                 h_stack((
-                    views::svg(|| instr!("../assets/haskell-logo.svg").to_owned())
+                    views::svg(|| instr!("../../../assets/haskell-logo.svg").to_owned())
                         .style(|s| s.height(18.0).width(18.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -812,7 +812,7 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
                 .pipe(container_box)
             } else if card_name.starts_with("linuxKernel.") {
                 h_stack((
-                    views::svg(|| instr!("../assets/tux.svg").to_owned())
+                    views::svg(|| instr!("../../../assets/tux.svg").to_owned())
                         .style(|s| s.height(18.0).width(18.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -820,7 +820,7 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
                 .pipe(container_box)
             } else if card_name.starts_with("vscode-extensions.") {
                 h_stack((
-                    views::svg(|| instr!("../assets/vscode.svg").to_owned())
+                    views::svg(|| instr!("../../../assets/vscode.svg").to_owned())
                         .style(|s| s.height(14.0).width(14.0)),
                     card_name_view(card_name.split_once(".").unwrap().1.to_owned()),
                 ))
@@ -860,7 +860,7 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
             });
 
             let homepage_icon = (
-                views::svg(|| instr!("../assets/home.svg").to_owned())
+                views::svg(|| instr!("../../../assets/home.svg").to_owned())
                     .style(|s| s.width(10.).height(10.))
                     .pipe(container)
                     .style(|s| {
@@ -1394,8 +1394,9 @@ fn construct_nixpkgs_search(
         move || searching_state.get(),
         move |s| match s {
             SearchingState::Idle => {
-                let nix_repo_svg = views::svg(|| instr!("../assets/nix-repro.svg").to_owned())
-                    .style(|s| s.width(125).aspect_ratio(1.0).margin_bottom(15.0));
+                let nix_repo_svg =
+                    views::svg(|| instr!("../../../assets/nix-repro.svg").to_owned())
+                        .style(|s| s.width(125).aspect_ratio(1.0).margin_bottom(15.0));
                 let label = static_label("Search 100k+ packages")
                     .style(|s| s.font_weight(Weight::NORMAL).font_size(14.0));
                 let label_top = static_label("Reproducible. Declarative. Reliable.")
@@ -1447,8 +1448,9 @@ fn construct_nixpkgs_search(
                 })
                 .pipe(Box::new),
             SearchingState::NoResultsAvailable => {
-                let nix_repo_svg = views::svg(|| instr!("../assets/nix-repro.svg").to_owned())
-                    .style(|s| s.width(125).aspect_ratio(1.0));
+                let nix_repo_svg =
+                    views::svg(|| instr!("../../../assets/nix-repro.svg").to_owned())
+                        .style(|s| s.width(125).aspect_ratio(1.0));
                 let label = static_label(
                     "We searched far and wide, but no trace of your query was found :(",
                 )
@@ -1496,7 +1498,7 @@ fn construct_nixpkgs_search(
 }
 
 fn nix_snowflake_svg() -> views::Svg {
-    views::svg(|| instr!("../assets/Nix_snowflake.svg").to_owned())
+    views::svg(|| instr!("../../../assets/Nix_snowflake.svg").to_owned())
 }
 
 fn create_project_menu(project_name: RwSignal<String>) -> impl View {
@@ -1562,7 +1564,7 @@ fn create_project_menu(project_name: RwSignal<String>) -> impl View {
             list_selection(
                 || false,
                 || item.to_owned(),
-                Icon::Svg(Cow::Borrowed(instr!("../assets/folder-white.svg"))),
+                Icon::Svg(Cow::Borrowed(instr!("../../../assets/folder-white.svg"))),
                 |s| s.padding_horiz(10.0),
             )
             .style(|s| s.border(1.0).border_color(theme().bd))
