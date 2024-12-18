@@ -832,28 +832,34 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
 
             let description = each.package_description;
 
-            // let add_package = static_label("Select").style(move |s| {
-            //     s.padding_vert(4.0)
-            //         .padding_horiz(10.0)
-            //         // .outline(2.0)
-            //         // .outline_color(theme().accent)
-            //         .background(theme().accent)
-            //         .apply_if(matches!(support, PackageSupport::Supported), move |s| {
-            //             s.background(theme().accent)
-            //         })
-            //         .apply_if(matches!(support, PackageSupport::MostLikelyNot), move |s| {
-            //             s.background(tailwind::color("red-700"))
-            //         })
-            //         .apply_if(matches!(support, PackageSupport::NoneListed), move |s| {
-            //             s.background(tailwind::color("green-700"))
-            //         })
-            //         .color(theme().fg_on_accent)
-            //         .border_radius(Pct(100.0))
-            //         .z_index(40)
-            //         .font_size(9.0)
-            //         .font_weight(Weight::SEMIBOLD)
-            // });
-            let version_line = (
+            let add_package = static_label(match support {
+                PackageSupport::Supported => "Supported OS",
+                PackageSupport::MostLikelyNot => "Unsupported OS",
+                PackageSupport::NoneListed => "Compatibility Unknown",
+            })
+            .style(move |s| {
+                s.padding_vert(4.0)
+                    .padding_horiz(10.0)
+                    // .outline(2.0)
+                    // .outline_color(theme().accent)
+                    .background(theme().accent)
+                    .apply_if(matches!(support, PackageSupport::Supported), move |s| {
+                        s.background(theme().accent.with_alpha_factor(0.25))
+                    })
+                    .apply_if(matches!(support, PackageSupport::MostLikelyNot), move |s| {
+                        s.background(tailwind::color("red-700").with_alpha_factor(0.25))
+                    })
+                    .apply_if(matches!(support, PackageSupport::NoneListed), move |s| {
+                        s.background(tailwind::color("green-700").with_alpha_factor(0.25))
+                    })
+                    .color(theme().fg_on_accent)
+                    .border_radius(Pct(100.0))
+                    .z_index(40)
+                    .font_size(10.0)
+                    .font_weight(Weight::SEMIBOLD)
+            });
+
+            let homepage_icon = (
                 views::svg(|| instr!("../assets/home.svg").to_owned())
                     .style(|s| s.width(10.).height(10.))
                     .pipe(container)
@@ -875,20 +881,29 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
                 .pipe(h_stack)
                 .style(|s| s.flex_row().gap(10.0, 0.0).align_items(AlignItems::Center));
 
-            let title_slide = (title_node, version_line)
+            let title_slide = (
+                title_node.style(|s| s.margin_top(-5.0)),
+                h_stack((add_package, homepage_icon)).style(|s| s.gap(5.0, 0.0)),
+            )
                 .pipe(h_stack)
-                .style(|s| s.flex_row().justify_between().flex_grow(1.0).items_center());
+                .style(|s| {
+                    s.flex_row()
+                        .align_items(AlignItems::Center)
+                        .justify_between()
+                        .flex_grow(1.0)
+                        .items_center()
+                });
 
             let top_line = (
-                title_slide,
-                static_label(format!("Version {version}"))
+                title_slide.style(|s| s.margin_left(-10.0)),
+                static_label(format!("Version    {version}"))
                     .style(|s| {
                         s.font_weight(Weight::SEMIBOLD)
                             .font_size(10.0)
                             .color(theme().fg_minus)
                     })
                     .pipe(container)
-                    .style(|s| s.padding_left(10.0).margin_top(-4.0)),
+                    .style(|s| s.padding_left(10.0).margin_top(-14.0)),
                 h_stack((
                     static_label("Variants").style(|s| s.font_bold().font_size(10.0)),
                     dyn_stack(
