@@ -779,6 +779,7 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
         move |(_sel, idx, each)| {
             let version = each.package_pversion.clone();
             let support = available_on_this_system(&each);
+            let outputs = each.package_outputs;
             let card_name = each.package_attr_name;
 
             let card_name_view = |card_name| {
@@ -874,8 +875,12 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
                 .pipe(h_stack)
                 .style(|s| s.flex_row().gap(10.0, 0.0).align_items(AlignItems::Center));
 
-            let title_side = (
-                title_node,
+            let title_slide = (title_node, version_line)
+                .pipe(h_stack)
+                .style(|s| s.flex_row().justify_between().flex_grow(1.0).items_center());
+
+            let top_line = (
+                title_slide,
                 static_label(format!("Version {version}"))
                     .style(|s| {
                         s.font_weight(Weight::SEMIBOLD)
@@ -883,13 +888,34 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
                             .color(theme().fg_minus)
                     })
                     .pipe(container)
-                    .style(|s| s.margin_left(10.0).margin_top(-4.0)),
+                    .style(|s| s.padding_left(10.0).margin_top(-4.0)),
+                h_stack((
+                    static_label("Variants").style(|s| s.font_bold().font_size(10.0)),
+                    dyn_stack(
+                        move || outputs.clone(),
+                        |k| k.clone(),
+                        |v| {
+                            container(static_label(v).style(|s| {
+                                s.padding_horiz(2.0)
+                                    .background(Color::BLACK.with_alpha_factor(0.1))
+                                    // .border(5.0)
+                                    .font_weight(Weight::NORMAL)
+                                    .border_color(theme().bd)
+                            }))
+                            .style(|s| {
+                                s.font_size(10.0)
+                                    .flex_row()
+                                    .gap(5.0, 0.0)
+                                    .color(theme().fg_minus)
+                            })
+                        },
+                    )
+                    .style(|s| s.flex_row().gap(5.0, 0.0).padding_left(5.0)),
+                ))
+                .style(|s| s.padding_left(10.0).margin_top(-4.0)),
             )
                 .pipe(v_stack)
-                .style(|s| s.gap(0.0, 0.0));
-            let top_line = (title_side, version_line)
-                .pipe(h_stack)
-                .style(|s| s.flex_row().justify_between().flex_grow(1.0).items_center());
+                .style(|s| s.gap(0.0, 5.0));
 
             let description = static_label(description.unwrap_or_default());
 
@@ -941,14 +967,15 @@ fn search_result_card(selected: RwSignal<Selectable<NixPackage>>) -> impl View {
             let programs_provided = h_stack_from_iter(each.package_programs.into_iter().map(|i| {
                 static_label(i).style(|s| {
                     s.padding_horiz(10)
-                        .padding_vert(4.0)
+                        .padding_vert(2.0)
                         .background(Color::BLACK.with_alpha_factor(0.1))
-                        .border(1.0)
-                        .border_radius(Pct(25.0))
+                        // .border(5.0)
+                        .border(0.5)
+                        .border_radius(Pct(100.0))
                         .border_color(theme().bd)
                 })
             }))
-            .style(|s| s.flex_wrap(FlexWrap::Wrap).width_full());
+            .style(|s| s.flex_wrap(FlexWrap::Wrap).gap(3.0, 3.0).width_full());
 
             let program_section = v_stack((
                 if number_of_binaries != 0 {
@@ -1054,9 +1081,7 @@ pub struct Channels {
 impl Channels {
     pub fn new() -> Self {
         Self {
-            opts: ["23.05", "23.11", "24.05", "unstable"]
-                .map(ToOwned::to_owned)
-                .to_vec(),
+            opts: ["24.11", "unstable"].map(ToOwned::to_owned).to_vec(),
         }
     }
 }
@@ -1072,7 +1097,11 @@ pub static THREAD_SEARCHER: Lazy<
         ) {
             Ok(mut val) => {
                 val.sort_by_cached_key(|v| {
-                    search_by_name_metric(&search_text.to_owned(), &v.package_attr_name)
+                    let has_exact_binary_match = v.package_programs.contains(&search_text);
+                    (
+                        has_exact_binary_match,
+                        search_by_name_metric(&search_text.to_owned(), &v.package_attr_name),
+                    )
                 });
 
                 val.reverse();
@@ -1195,9 +1224,11 @@ fn construct_nixpkgs_search(
     let active_packages = create_rw_signal(Selectable::new());
     let searching_state = create_rw_signal(SearchingState::Idle);
 
+    let n_channels = Channels::new().opts.len();
+
     let search_props = create_rw_signal(SearchProperties {
         mode: SearchMode::Name,
-        channel: Channels::new().opts.len() - 2,
+        channel: 0,
     });
     create_effect(move |_| {
         if let Some(pkg) = active_package_receiver.get() {
@@ -1275,9 +1306,8 @@ fn construct_nixpkgs_search(
 
     search.id().request_focus();
     let style_func = |s: Style| {
-        s.font_weight(Weight::BOLD)
-            .padding_vert(8.0)
-            .padding_horiz(10.0)
+        s.padding_vert(3.0)
+            .padding_horiz(12.0)
             .background(theme().accent)
             .flex()
             .background(theme().bg_plus)
@@ -1285,7 +1315,7 @@ fn construct_nixpkgs_search(
             .border_color(theme().bd)
             .border(1.0)
             .items_center()
-            .border_radius(4.0)
+            .border_radius(15.0)
             .justify_center()
     };
     let choose_mode = views::dyn_container(
@@ -1297,6 +1327,8 @@ fn construct_nixpkgs_search(
                     .style(move |s| {
                         style_func(s).apply_if(sp.mode == SearchMode::Name, |s| {
                             s.background(theme().accent)
+                                .border_color(Color::rgba8(0, 0, 0, 0))
+                                .font_weight(Weight::SEMIBOLD)
                         })
                     })
                     .on_click_stop(move |_| search_props.update(|s| s.mode = SearchMode::Name)),
@@ -1305,30 +1337,32 @@ fn construct_nixpkgs_search(
                     .style(move |s| {
                         style_func(s).apply_if(sp.mode == SearchMode::Program, |s| {
                             s.background(theme().accent)
+                                .border_color(Color::rgba8(0, 0, 0, 0))
+                                .font_weight(Weight::SEMIBOLD)
                         })
                     })
                     .on_click_stop(move |_e| search_props.update(|s| s.mode = SearchMode::Program)),
                 views::empty().style(|s| s.flex_grow(1.0)),
-                static_label("23.05")
-                    .pipe(views::container)
-                    .style(style_func)
-                    .style(move |s| s.apply_if(sp.channel == 0, |s| s.background(theme().accent)))
-                    .on_click_stop(move |_e| search_props.update(|s| s.channel = 0)),
-                static_label("23.11")
-                    .pipe(views::container)
-                    .style(style_func)
-                    .style(move |s| s.apply_if(sp.channel == 1, |s| s.background(theme().accent)))
-                    .on_click_stop(move |_e| search_props.update(|s| s.channel = 1)),
-                static_label("24.05")
-                    .pipe(views::container)
-                    .style(style_func)
-                    .style(move |s| s.apply_if(sp.channel == 2, |s| s.background(theme().accent)))
-                    .on_click_stop(move |_e| search_props.update(|s| s.channel = 2)),
-                static_label("unstable")
-                    .pipe(views::container)
-                    .style(style_func)
-                    .style(move |s| s.apply_if(sp.channel == 3, |s| s.background(theme().accent)))
-                    .on_click_stop(move |_e| search_props.update(|s| s.channel = 3)),
+                // create the channel list
+                dyn_stack(
+                    move || 0..n_channels,
+                    |channel_idx| *channel_idx,
+                    move |channel_idx| {
+                        static_label(format!("{}", Channels::new().opts[channel_idx]))
+                            .style(style_func)
+                            .style(move |s| {
+                                s.apply_if(sp.channel == channel_idx, |s| {
+                                    s.background(theme().accent)
+                                        .border_color(Color::rgba8(0, 0, 0, 0))
+                                        .font_weight(Weight::SEMIBOLD)
+                                })
+                            })
+                            .on_click_stop(move |_e| {
+                                search_props.update(|s| s.channel = channel_idx)
+                            })
+                    },
+                )
+                .style(|s| s.flex().flex_row().gap(5.0, 0.0)),
             ))
             .style(|s| s.gap(5.0, 0.0).width_full())
             .pipe(Box::new)
@@ -1339,7 +1373,7 @@ fn construct_nixpkgs_search(
 
     let search_section = (title, search, choose_mode)
         .pipe(v_stack)
-        .style(|s| s.gap(0.0, 15.0).min_width(0));
+        .style(|s| s.gap(0.0, 10.0).min_width(0));
 
     let results_section = views::dyn_container(
         move || searching_state.get(),
