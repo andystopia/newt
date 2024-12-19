@@ -1,0 +1,10 @@
+[package]
+name = "nix-channel-list"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+quick-xml = { version = "0.37.1", features = ["serde", "serialize"] }
+serde = { version = "1.0.216", features = ["derive"] }
+thiserror = "2.0.8"
+ureq = "2.12.1"

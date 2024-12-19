@@ -13,6 +13,18 @@ I tried my best to make it look like a nice native clean MacOS application.
 ![](assets/ui-screencapture.png)
 
 
+## Also Included In Repo.
+
+I also wrote a tool called `gnix`, which I use as 
+a wrapper for nix, and some convenience tooling, such 
+as displaying what the current nix channels are, and 
+displaying installed packages, with additional information.
+
+I plan to mainstream a the gnix featureset directly into the 
+newt-gui, just for my convenience.
+
+![](assets/gnix-screenshot.png)
+
 ## Installation. 
 
 I _think_ you can just download, and then type 

@@ -4,6 +4,6 @@ exclude = ["crates/floem"]
 resolver = "2"
 
 [workspace.dependencies]
-floem = {path = "crates/floem"}
-newt-gui= {path = "crates/newt-gui"}
-
+# floem = {path = "crates/floem"}
+nix-installed-list = {path = "crates/nix-installed-list"}
+nix-channel-list = {path = "crates/nix-channel-list"}
