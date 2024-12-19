@@ -1,0 +1,9 @@
+[package]
+name = "nixhub-version-search"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+scraper = "0.22.0"
+thiserror = "2.0.8"
+ureq = "2.12.1"
