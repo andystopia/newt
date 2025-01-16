@@ -1,5 +1,10 @@
+use std::{
+    os::unix::process::CommandExt,
+    process::{Command, Stdio},
+};
+
 use clap::Parser;
-use color_eyre::owo_colors::OwoColorize;
+use color_eyre::{eyre::ContextCompat, owo_colors::OwoColorize};
 use nix_installed_list::{get_meta, get_version, manifest_parsed};
 
 #[derive(Parser, Debug)]
@@ -9,15 +14,21 @@ pub enum Cli {
 
     /// list available channels from the nixpkgs
     /// repository. this command only shows "fully-fledged"
-    /// distributions, so small, and darwin channels 
-    /// are not displayed. Unstable is assumed to always 
-    /// exist, so it is not printed in this list, only 
+    /// distributions, so small, and darwin channels
+    /// are not displayed. Unstable is assumed to always
+    /// exist, so it is not printed in this list, only
     /// nixos-XX.YY channels are shown.
-    ListChannels { 
+    ListChannels {
         /// the most recent n packages will be shown,
         /// by default, this is 5.
-        n: Option<usize>
-    }
+        n: Option<usize>,
+    },
+
+    /// install, by default, installs from the nixpkgs
+    /// repository, but if the package characters don't
+    /// match [0-9-_\.A-z], then the package will
+    /// attempt to install from spec passed
+    Install { package: String },
 }
 
 fn main() -> color_eyre::Result<()> {
@@ -43,14 +54,15 @@ fn main() -> color_eyre::Result<()> {
                     "{joiner}─{} ",
                     format!(
                         "{}{}{}{}{}",
-                        " ".on_blue(),
-                        pname.clone().bold().on_blue(),
-                        " @ ".on_blue(),
+                        " ".on_bright_blue(),
+                        pname.clone().bold().black().on_bright_blue(),
+                        " @ ".on_bright_blue().black(),
                         match version {
-                            Some(s) => format!("{}", s.bold().on_blue()),
-                            None => format!("{}", "<version unknown>".italic().on_blue()),
+                            Some(s) => format!("{}", s.bold().on_bright_blue().black()),
+                            None =>
+                                format!("{}", "<version unknown>".italic().on_bright_blue().black()),
                         },
-                        " ".on_blue()
+                        " ".on_bright_blue()
                     ),
                 );
                 if let Some(description) = description {
@@ -73,7 +85,7 @@ fn main() -> color_eyre::Result<()> {
                     println!("{indent}");
                 }
             }
-        },
+        }
         Cli::ListChannels { n } => {
             let channel_list = nix_channel_list::get_full_channels()?;
             let mut channel_list = channel_list.into_iter().collect::<Vec<_>>();
@@ -83,8 +95,44 @@ fn main() -> color_eyre::Result<()> {
             for channel in channel_list.iter().take(n) {
                 println!("{}", channel);
             }
-        },
+        }
+        Cli::Install { package } => {
+            let channel_list = nix_channel_list::get_full_channels()?;
+            let mut channel_list = channel_list.into_iter().collect::<Vec<_>>();
+            channel_list.sort();
 
+            let latest_channel = channel_list
+                .pop()
+                .context("there should be at least one valid channel")?;
+
+            let mut command = Command::new("nix");
+
+            let augment = package
+                .chars()
+                .all(|c| ('A'..'z').contains(&c) || c == '_' || c == '-' || c == '.');
+
+            let src = if augment {
+                format!("nixpkgs/nixos-{latest_channel}#{package}")
+            } else {
+                package
+            };
+            let args = ["profile", "install", &src];
+
+            println!(
+                "{}",
+                format!(" nix profile install {} ", args.join(" "))
+                    .black()
+                    .on_bright_blue()
+            );
+
+            command.args(args);
+
+            let mut child = command.spawn()?;
+
+            let waited = child.wait()?;
+
+            std::process::exit(waited.code().unwrap_or(0))
+        }
     }
     Ok(())
 }
