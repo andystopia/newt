@@ -1,7 +1,4 @@
-use std::{
-    os::unix::process::CommandExt,
-    process::{Command, Stdio},
-};
+use std::process::Command;
 
 use clap::Parser;
 use color_eyre::{eyre::ContextCompat, owo_colors::OwoColorize};
@@ -29,6 +26,8 @@ pub enum Cli {
     /// match [0-9-_\.A-z], then the package will
     /// attempt to install from spec passed
     Install { package: String },
+    /// uninstall a packge by name
+    Uninstall { package: String },
 }
 
 fn main() -> color_eyre::Result<()> {
@@ -127,6 +126,15 @@ fn main() -> color_eyre::Result<()> {
 
             command.args(args);
 
+            let mut child = command.spawn()?;
+
+            let waited = child.wait()?;
+
+            std::process::exit(waited.code().unwrap_or(0))
+        }
+        Cli::Uninstall { package } => {
+            let mut command = Command::new("nix");
+            command.args(&["profile", "remove", &package]);
             let mut child = command.spawn()?;
 
             let waited = child.wait()?;
