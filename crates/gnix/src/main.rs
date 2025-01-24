@@ -30,6 +30,10 @@ pub enum Cli {
         #[clap(long)]
         unstable: bool,
     },
+    /// Install a package from a nixpkgs PR.
+    /// This probably won't be used crazy commonly, but
+    /// exists out of convenience.
+    InstallNixpkgsPr { pr: u64, package: String },
     /// uninstall a packge by name
     Uninstall { package: String },
 }
@@ -112,7 +116,6 @@ fn main() -> color_eyre::Result<()> {
                     .context("there should be at least one valid channel")?;
                 latest_channel
             };
-            let mut command = Command::new("nix");
 
             let augment = package
                 .chars()
@@ -123,20 +126,11 @@ fn main() -> color_eyre::Result<()> {
             } else {
                 package
             };
-            let args = ["profile", "install", &src];
-
-            println!(
-                "{}",
-                format!("nix {} ", args.join(" ")).black().on_bright_blue()
-            );
-
-            command.args(args);
-
-            let mut child = command.spawn()?;
-
-            let waited = child.wait()?;
-
-            std::process::exit(waited.code().unwrap_or(0))
+            install_package(src)?;
+        }
+        Cli::InstallNixpkgsPr { pr, package } => {
+            let nixpkgs_ref = format!("github:nixos/nixpkgs/pull/{pr}/head#{package}");
+            install_package(nixpkgs_ref)?;
         }
         Cli::Uninstall { package } => {
             let mut command = Command::new("nix");
@@ -149,4 +143,20 @@ fn main() -> color_eyre::Result<()> {
         }
     }
     Ok(())
+}
+
+fn install_package(src: String) -> Result<std::convert::Infallible, color_eyre::eyre::Error> {
+    let mut command = Command::new("nix");
+    let args = ["profile", "install", &src];
+    println!(
+        "{}",
+        format!("nix {} ", args.join(" ")).black().on_bright_blue()
+    );
+    command.args(args);
+    let mut child = command.spawn()?;
+    let waited = child.wait()?;
+
+    // we're going to just simply bubble up whatever
+    // the process exit code is.
+    std::process::exit(waited.code().unwrap_or(0))
 }
