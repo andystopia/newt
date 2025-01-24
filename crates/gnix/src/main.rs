@@ -25,7 +25,11 @@ pub enum Cli {
     /// repository, but if the package characters don't
     /// match [0-9-_\.A-z], then the package will
     /// attempt to install from spec passed
-    Install { package: String },
+    Install {
+        package: String,
+        #[clap(long)]
+        unstable: bool,
+    },
     /// uninstall a packge by name
     Uninstall { package: String },
 }
@@ -95,15 +99,19 @@ fn main() -> color_eyre::Result<()> {
                 println!("{}", channel);
             }
         }
-        Cli::Install { package } => {
-            let channel_list = nix_channel_list::get_full_channels()?;
-            let mut channel_list = channel_list.into_iter().collect::<Vec<_>>();
-            channel_list.sort();
+        Cli::Install { package, unstable } => {
+            let selected_channel = if unstable {
+                "unstable".to_owned()
+            } else {
+                let channel_list = nix_channel_list::get_full_channels()?;
+                let mut channel_list = channel_list.into_iter().collect::<Vec<_>>();
+                channel_list.sort();
 
-            let latest_channel = channel_list
-                .pop()
-                .context("there should be at least one valid channel")?;
-
+                let latest_channel = channel_list
+                    .pop()
+                    .context("there should be at least one valid channel")?;
+                latest_channel
+            };
             let mut command = Command::new("nix");
 
             let augment = package
@@ -111,7 +119,7 @@ fn main() -> color_eyre::Result<()> {
                 .all(|c| ('A'..'z').contains(&c) || c == '_' || c == '-' || c == '.');
 
             let src = if augment {
-                format!("nixpkgs/nixos-{latest_channel}#{package}")
+                format!("nixpkgs/nixos-{selected_channel}#{package}")
             } else {
                 package
             };
@@ -119,9 +127,7 @@ fn main() -> color_eyre::Result<()> {
 
             println!(
                 "{}",
-                format!(" nix profile install {} ", args.join(" "))
-                    .black()
-                    .on_bright_blue()
+                format!("nix {} ", args.join(" ")).black().on_bright_blue()
             );
 
             command.args(args);
