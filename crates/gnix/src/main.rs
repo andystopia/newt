@@ -119,7 +119,7 @@ fn main() -> color_eyre::Result<()> {
 
             let augment = package
                 .chars()
-                .all(|c| ('A'..'z').contains(&c) || c == '_' || c == '-' || c == '.');
+                .all(|c| ('A'..='z').contains(&c) || c == '_' || c == '-' || c == '.');
 
             let src = if augment {
                 format!("nixpkgs/nixos-{selected_channel}#{package}")
