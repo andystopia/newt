@@ -1,4 +1,9 @@
 use std::collections::HashMap;
+mod cache;
+
+pub use cache::{
+    setup_cache_dir, CachePackage, CachePackageLookup, CachePackageLookupKey, CachePackages,
+};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
