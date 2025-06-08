@@ -27,6 +27,7 @@ fn http_query(
             for (key, value) in headers {
                 req = req.header(&*key, &*value);
             }
+
             let sent = match body {
                 Some(body) => req.send(body),
                 None => req.send_empty(),
