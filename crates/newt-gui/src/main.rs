@@ -1088,7 +1088,7 @@ pub struct Channels {
 impl Channels {
     pub fn new() -> Self {
         Self {
-            opts: ["24.11", "unstable"].map(ToOwned::to_owned).to_vec(),
+            opts: ["25.05", "unstable"].map(ToOwned::to_owned).to_vec(),
         }
     }
 }
