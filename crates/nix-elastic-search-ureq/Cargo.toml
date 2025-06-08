@@ -1,0 +1,8 @@
+[package]
+name = "nix-elastic-search-ureq"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nix-elastic-search.workspace = true
+ureq = "3.0.11"
