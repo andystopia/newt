@@ -582,14 +582,6 @@ pub fn nixpkgs_search_window() -> impl View {
         screen: ApplicationScreen::Search,
     });
 
-    let environ = create_rw_signal({
-        let mut env = env::EnvironmentEntries::default();
-        env.push_simple("cargo");
-        env.push_simple("gleam");
-        env.push_simple("just");
-        env
-    });
-
     let active_package_receiver = THREAD_SEARCHER.create_channel_from_receiver();
     let view = dyn_container(
         move || outer_mode.get(),

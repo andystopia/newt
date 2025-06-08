@@ -120,18 +120,37 @@ pub fn search_by_name_metric(query: &str, name: &str) -> QueryQuality {
 
 // retrives the active working system. This call is lazy and will
 // not call the shell after the first invocation.
+#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
 pub fn nix_system() -> &'static str {
-    static CURRENT_SYSTEM: Lazy<String> = Lazy::new(|| {
-        let mut cmd = std::process::Command::new("/nix/var/nix/profiles/default/bin/nix");
-        cmd.args(&[
-            "eval",
-            "--impure",
-            "--raw",
-            "--expr",
-            "builtins.currentSystem",
-        ]);
+    // static CURRENT_SYSTEM: Lazy<String> = Lazy::new(|| {
+    //     let mut cmd = std::process::Command::new("/nix/var/nix/profiles/default/bin/nix");
+    //     cmd.args(&[
+    //         "eval",
+    //         "--impure",
+    //         "--raw",
+    //         "--expr",
+    //         "builtins.currentSystem",
+    //     ]);
 
-        dbg!(cmd.output().unwrap().stdout.as_bstr().to_string())
-    });
-    CURRENT_SYSTEM.as_str()
+    //     dbg!(cmd.output().unwrap().stdout.as_bstr().to_string())
+    // });
+    // CURRENT_SYSTEM.as_str()
+    "aarch64-darwin"
+}
+#[cfg(all(target_arch = "x86_64", target_os = "macos"))]
+pub fn nix_system() -> &'static str {
+    // static CURRENT_SYSTEM: Lazy<String> = Lazy::new(|| {
+    //     let mut cmd = std::process::Command::new("/nix/var/nix/profiles/default/bin/nix");
+    //     cmd.args(&[
+    //         "eval",
+    //         "--impure",
+    //         "--raw",
+    //         "--expr",
+    //         "builtins.currentSystem",
+    //     ]);
+
+    //     dbg!(cmd.output().unwrap().stdout.as_bstr().to_string())
+    // });
+    // CURRENT_SYSTEM.as_str()
+    "arm64-darwin"
 }
