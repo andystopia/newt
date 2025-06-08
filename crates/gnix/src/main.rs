@@ -2,6 +2,8 @@ use std::{ops::Index, process::Command, str::FromStr};
 
 use clap::Parser;
 use color_eyre::{eyre::ContextCompat, owo_colors::OwoColorize};
+use nix_elastic_search::{MatchSearch, NixElasticSearch, Query};
+use nix_elastic_search_ureq::UreqNixSearcher;
 use nix_installed_list::{
     get_meta, get_version, manifest_parsed, CachePackage, CachePackageLookup,
     CachePackageLookupKey, CachePackages,
@@ -105,6 +107,11 @@ pub enum Cli {
     InstallNixpkgsPr { pr: u64, package: String },
     /// uninstall a packge by name
     Uninstall { package: String },
+    Search {
+        package: String,
+        #[clap(long)]
+        unstable: bool,
+    },
 }
 
 /// the idea of this function is that
@@ -123,6 +130,35 @@ fn package_prefix_map(input: &str) -> String {
     }
 }
 
+fn search_package(name: &str, unstable: bool) -> color_eyre::Result<()> {
+    let searcher = NixElasticSearch::new();
+    let ureq_searcher = UreqNixSearcher::new(searcher);
+
+    if unstable {
+        let response = ureq_searcher.channel(
+            "unstable",
+            Query {
+                max_results: 10,
+                search: Some(MatchSearch {
+                    search: name.to_owned(),
+                }),
+                ..Default::default()
+            },
+        )??;
+
+        // println!("{:#?}", response);
+        for package in response {
+            println!("{}", package.package_pname);
+        }
+    } else {
+        let channel_list = nix_channel_list::get_full_channels()?;
+        let mut channel_list = channel_list.into_iter().collect::<Vec<_>>();
+        channel_list.sort();
+        channel_list.reverse();
+    }
+
+    Ok(())
+}
 fn main() -> color_eyre::Result<()> {
     let cli = Cli::parse();
     match cli {
@@ -221,6 +257,7 @@ fn main() -> color_eyre::Result<()> {
 
             std::process::exit(waited.code().unwrap_or(0))
         }
+        Cli::Search { package, unstable } => search_package(&package, unstable)?,
     }
     Ok(())
 }
