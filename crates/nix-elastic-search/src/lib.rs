@@ -102,15 +102,31 @@ impl NixElasticSearch {
         Self::default()
     }
 
+    pub fn set_url_str(&mut self, url: &str) -> Result<(), url::ParseError> {
+        match Url::parse(url) {
+            Ok(parsed) => {
+                self.url_prefix = parsed;
+                Ok(())
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
+    }
+
     fn channel_url(&self, channel: &str) -> Result<Url, NixSearchError> {
         self.url_prefix
             .join(&format!("/{}nixos-{channel}/", self.elastic_prefix))
+            .map_err(|err| NixSearchError::UrlError { source: err })?
+            .join("_search")
             .map_err(|err| NixSearchError::UrlError { source: err })
     }
 
     fn flakes_url(&self) -> Result<Url, NixSearchError> {
         self.url_prefix
             .join(&format!("{}group-manual/", self.elastic_prefix))
+            .map_err(|err| NixSearchError::UrlError { source: err })?
+            .join("_search")
             .map_err(|err| NixSearchError::UrlError { source: err })
     }
 
@@ -187,8 +203,9 @@ impl<'nes> SearchQuery<'nes> {
         let request_url = self.get_url().unwrap();
 
         let auth = BASE64_STANDARD.encode(format!("{}:{}", self.nes.username, self.nes.password));
+        let auth_line = format!("Basic {}", auth);
         let headers = vec![
-            (B("Authorization"), O(auth)),
+            (B("Authorization"), O(auth_line)),
             (B("Content-Type"), B("application/json")),
             (B("Accept"), B("application/json")),
         ];
@@ -257,10 +274,13 @@ pub enum NixSearchError {
 
 pub type Result<T, E = NixSearchError> = ::std::result::Result<T, E>;
 
+#[derive(Debug)]
 pub enum HttpVerb {
     GET,
     POST,
 }
+
+#[derive(Debug)]
 pub struct NixElasticSearchHttpRequest {
     pub verb: HttpVerb,
     pub url: Url,
@@ -268,6 +288,7 @@ pub struct NixElasticSearchHttpRequest {
     pub body: Option<String>,
 }
 
+#[derive(Default)]
 pub struct Query {
     pub max_results: u32,
 
