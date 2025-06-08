@@ -1,7 +1,10 @@
-use std::{ops::Index, process::Command, str::FromStr};
+use std::{process::Command, str::FromStr};
 
 use clap::Parser;
-use color_eyre::{eyre::ContextCompat, owo_colors::OwoColorize};
+use color_eyre::{
+    eyre::{bail, ContextCompat},
+    owo_colors::OwoColorize,
+};
 use nix_elastic_search::{MatchSearch, NixElasticSearch, Query};
 use nix_elastic_search_ureq::UreqNixSearcher;
 use nix_installed_list::{
@@ -134,8 +137,8 @@ fn search_package(name: &str, unstable: bool) -> color_eyre::Result<()> {
     let searcher = NixElasticSearch::new();
     let ureq_searcher = UreqNixSearcher::new(searcher);
 
-    if unstable {
-        let response = ureq_searcher.channel(
+    let packages = if unstable {
+        ureq_searcher.channel(
             "unstable",
             Query {
                 max_results: 10,
@@ -144,17 +147,54 @@ fn search_package(name: &str, unstable: bool) -> color_eyre::Result<()> {
                 }),
                 ..Default::default()
             },
-        )??;
-
-        // println!("{:#?}", response);
-        for package in response {
-            println!("{}", package.package_pname);
-        }
+        )??
     } else {
         let channel_list = nix_channel_list::get_full_channels()?;
         let mut channel_list = channel_list.into_iter().collect::<Vec<_>>();
         channel_list.sort();
         channel_list.reverse();
+        channel_list.truncate(2);
+        let Ok([latest, lagging]): Result<[_; 2], _> = channel_list.try_into() else {
+            bail!("Only one valid channel was found");
+        };
+
+        let search_channel = if ureq_searcher.channel_is_searchable(&latest)?? {
+            latest
+        } else {
+            println!(
+                "{}: Latest channel (`{}`) was not searchable. Falling back to `{}`",
+                "[WARNING]".yellow(),
+                latest,
+                lagging
+            );
+            lagging
+        };
+
+        ureq_searcher.channel(
+            &search_channel,
+            Query {
+                max_results: 10,
+                search: Some(MatchSearch {
+                    search: name.to_owned(),
+                }),
+                ..Default::default()
+            },
+        )??
+    };
+
+    for package in packages {
+        if package.package_pversion.trim().is_empty() {
+            println!("{}", package.package_pname.white().bold(),);
+        } else {
+            println!(
+                "{} @ {}",
+                package.package_pname.white().bold(),
+                package.package_pversion
+            );
+        }
+        if let Some(desc) = &package.package_description {
+            println!(" ↳ {}", desc);
+        }
     }
 
     Ok(())

@@ -1798,6 +1798,8 @@ dependencies = [
  "clap",
  "color-eyre",
  "nix-channel-list",
+ "nix-elastic-search 0.1.0",
+ "nix-elastic-search-ureq",
  "nix-installed-list",
  "toml_edit 0.22.26",
 ]
