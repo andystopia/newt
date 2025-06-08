@@ -14,9 +14,46 @@
 //! This is shifting to a sans-io library as the rust ecosystem for web requests appears to still be developing
 //! and therefore, depending on your application you might want reqwest or isaac or ureq2 or ureq3, and I could include
 //! some of these, but I want to keep compile times light as possible.
+//!
+//! ## Examples
+//!
+//! ```rust
+//! let search = NixElasticSearch::new();
+//!
+//! println!("{:#?}",
+//!    search.channel("25.05",
+//!      Query {
+//!        search: None,
+//!        program: None,
+//!        name: Some(MatchName {
+//!            name: "gleam".to_owned(),
+//!        }),
+//!        version: None,
+//!        query_string: None,
+//!      }
+//! ))
 //! ```
+//!
+//! This is a sans-io library, so the above doesn't directly search,
+//! but does produce an object which can produce the necessary information
+//! to create an http request, which can then be called.
+mod response;
+
+use std::borrow::Cow;
+
+pub use response::{
+    ElasticSearchResponseError, ElasticSearchResponseErrorResource, NixPackage, PackageLicense,
+    PackageMaintainer,
+};
+
+use base64::prelude::*;
+use serde_json::json;
+use thiserror::Error;
+use url::Url;
 
 #[derive(Debug)]
+/// An error handling struct which attempts
+/// to figure out where exactly a serde error happened
 pub struct SerdeNixPackagePath {
     text: String,
 }
@@ -36,22 +73,155 @@ impl SerdeNixPackagePath {
         }
     }
 }
-mod response;
 
-use std::borrow::Cow;
+/// Entry point for searching.
+#[derive(Debug, Clone)]
+pub struct NixElasticSearch {
+    pub username: String,
+    pub password: String,
+    pub url_prefix: Url,
+    pub elastic_prefix: String,
+}
 
-pub use response::{
-    ElasticSearchResponseError, ElasticSearchResponseErrorResource, ErrorResource, NixPackage,
-    PackageLicense, PackageMaintainer,
-};
+impl Default for NixElasticSearch {
+    fn default() -> Self {
+        Self {
+            username: "aWVSALXpZv".to_owned(),
+            password: "X8gPHnzL52wFEekuxsfQ9cSh".to_owned(),
+            url_prefix: Url::parse(
+                "https://nixos-search-7-1733963800.us-east-1.bonsaisearch.net:443/",
+            )
+            .unwrap(),
+            elastic_prefix: "latest-*-".to_owned(),
+        }
+    }
+}
 
-use base64::prelude::*;
-use serde_json::json;
-use thiserror::Error;
-use url::Url;
+impl NixElasticSearch {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn channel_url(&self, channel: &str) -> Result<Url, NixSearchError> {
+        self.url_prefix
+            .join(&format!("/{}nixos-{channel}/", self.elastic_prefix))
+            .map_err(|err| NixSearchError::UrlError { source: err })
+    }
+
+    fn flakes_url(&self) -> Result<Url, NixSearchError> {
+        self.url_prefix
+            .join(&format!("{}group-manual/", self.elastic_prefix))
+            .map_err(|err| NixSearchError::UrlError { source: err })
+    }
+
+    pub fn channel_is_searchable_request(&self, channel: &str) -> NixElasticSearchHttpRequest {
+        use std::borrow::Cow::Borrowed as B;
+        use std::borrow::Cow::Owned as O;
+        let request_url = self.channel_url(channel).unwrap();
+
+        let auth = BASE64_STANDARD.encode(format!("{}:{}", &self.username, &self.password));
+
+        let headers = vec![
+            (B("Authorization"), O(auth)),
+            (B("Content-Type"), B("application/json")),
+            (B("Accept"), B("application/json")),
+        ];
+        NixElasticSearchHttpRequest {
+            verb: HttpVerb::GET,
+            url: request_url,
+            headers,
+            body: None,
+        }
+    }
+
+    pub fn channel_is_searchable_response(&self, body: String) -> Result<bool, NixSearchError> {
+        let body = serde_json::from_str::<serde_json::Value>(&body).map_err(|err| {
+            NixSearchError::DeserializationError {
+                path: SerdeNixPackagePath::new(body),
+                source: err,
+            }
+        })?;
+
+        let Some(object) = body.as_object() else {
+            return Ok(false);
+        };
+
+        Ok(object.keys().len() > 0)
+    }
+
+    /// search within a channel, should be denoted like 25.05
+    /// NOT nixos-25.05
+    pub fn channel(&self, channel: String, query: Query) -> SearchQuery<'_> {
+        SearchQuery {
+            nes: &self,
+            search_within: SearchWithin::Channel(channel),
+            query,
+        }
+    }
+    pub fn flakes(&self, query: Query) -> SearchQuery<'_> {
+        SearchQuery {
+            nes: &self,
+            search_within: SearchWithin::Flakes,
+            query,
+        }
+    }
+}
+
+pub struct SearchQuery<'nes> {
+    nes: &'nes NixElasticSearch,
+    search_within: SearchWithin,
+    query: Query,
+}
+
+impl<'nes> SearchQuery<'nes> {
+    fn get_url(&self) -> Result<Url, NixSearchError> {
+        match &self.search_within {
+            SearchWithin::Channel(channel) => self.nes.channel_url(channel),
+            SearchWithin::Flakes => self.nes.flakes_url(),
+        }
+    }
+
+    pub fn search_request(&self) -> NixElasticSearchHttpRequest {
+        use std::borrow::Cow::Borrowed as B;
+        use std::borrow::Cow::Owned as O;
+        let request_url = self.get_url().unwrap();
+
+        let auth = BASE64_STANDARD.encode(format!("{}:{}", self.nes.username, self.nes.password));
+        let headers = vec![
+            (B("Authorization"), O(auth)),
+            (B("Content-Type"), B("application/json")),
+            (B("Accept"), B("application/json")),
+        ];
+        NixElasticSearchHttpRequest {
+            verb: HttpVerb::POST,
+            url: request_url,
+            headers,
+            body: Some(self.query.payload().to_string()),
+        }
+    }
+
+    pub fn search_response(&self, body: String) -> Result<Vec<NixPackage>, NixSearchError> {
+        let read = match serde_json::from_str::<response::SearchResponse>(&body) {
+            Ok(r) => r,
+            Err(err) => {
+                return Err(NixSearchError::DeserializationError {
+                    path: SerdeNixPackagePath::new(body),
+                    source: err,
+                })
+            }
+        };
+
+        match read {
+            response::SearchResponse::Error { error, status } => {
+                Err(NixSearchError::ElasticSearchError { error, status })
+            }
+            response::SearchResponse::Success { packages } => Ok(packages),
+        }
+    }
+}
 
 /// chose whether to search in flakes or by channel
-pub enum SearchWithin {
+enum SearchWithin {
     /// should be something like 23.11 (not nixos-23.11)
     Channel(String),
     Flakes,
@@ -77,20 +247,29 @@ pub enum NixSearchError {
         #[source]
         source: url::ParseError,
     },
+
+    #[error("Invalid Nix Search Url")]
+    UrlError {
+        #[source]
+        source: url::ParseError,
+    },
 }
 
-pub struct ElasticSearchHTTPRequest {
-    url: Url,
-    headers: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    body: String,
-}
+pub type Result<T, E = NixSearchError> = ::std::result::Result<T, E>;
 
-/// **USE THIS**: This is where you define what parameterizes your search  
-/// note: multiple filters are allowed.
+pub enum HttpVerb {
+    GET,
+    POST,
+}
+pub struct NixElasticSearchHttpRequest {
+    pub verb: HttpVerb,
+    pub url: Url,
+    pub headers: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+    pub body: Option<String>,
+}
 
 pub struct Query {
     pub max_results: u32,
-    pub search_within: SearchWithin,
 
     pub search: Option<MatchSearch>,
     pub program: Option<MatchProgram>,
@@ -100,62 +279,6 @@ pub struct Query {
 }
 
 impl Query {
-    fn prefix() -> Url {
-        Url::parse("https://nixos-search-7-1733963800.us-east-1.bonsaisearch.net:443/").unwrap()
-    }
-    const ELASTIC_PREFIX: &'static str = "latest-*-";
-    const USERNAME: &'static str = "aWVSALXpZv";
-    const PASSWORD: &'static str = "X8gPHnzL52wFEekuxsfQ9cSh";
-
-    fn get_url(&self) -> Result<Url, url::ParseError> {
-        match &self.search_within {
-            SearchWithin::Channel(channel) => {
-                Self::prefix().join(&format!("/{}nixos-{channel}/", Self::ELASTIC_PREFIX))?
-            }
-            SearchWithin::Flakes => {
-                Self::prefix().join(&format!("{}group-manual/", Self::ELASTIC_PREFIX))?
-            }
-        }
-        .join("_search")
-    }
-
-    pub fn request(&self) -> ElasticSearchHTTPRequest {
-        use std::borrow::Cow::Borrowed as B;
-        use std::borrow::Cow::Owned as O;
-        let request_url = self.get_url().unwrap();
-
-        let auth = BASE64_STANDARD.encode(format!("{}:{}", Self::USERNAME, Self::PASSWORD));
-        let headers = vec![
-            (B("Authorization"), O(auth)),
-            (B("Content-Type"), B("application/json")),
-            (B("Accept"), B("application/json")),
-        ];
-        ElasticSearchHTTPRequest {
-            url: request_url,
-            headers,
-            body: self.payload().to_string(),
-        }
-    }
-
-    pub fn response(&self, body: String) -> Result<Vec<NixPackage>, NixSearchError> {
-        let read = match serde_json::from_str::<response::SearchResponse>(&body) {
-            Ok(r) => r,
-            Err(err) => {
-                return Err(NixSearchError::DeserializationError {
-                    path: SerdeNixPackagePath::new(body),
-                    source: err,
-                })
-            }
-        };
-
-        match read {
-            response::SearchResponse::Error { error, status } => {
-                Err(NixSearchError::ElasticSearchError { error, status })
-            }
-            response::SearchResponse::Success { packages } => Ok(packages),
-        }
-    }
-
     fn payload(&self) -> serde_json::Value {
         let starting_payload = json!({
            "match": {
@@ -352,7 +475,6 @@ impl MatchQueryString {
 
 #[cfg(test)]
 mod test {
-    use super::*;
 
     // #[test]
     // fn test_search() {
@@ -401,22 +523,4 @@ mod test {
 
     //     query.send().unwrap();
     // }
-
-    #[test]
-    fn test_url() {
-        let query = Query {
-            max_results: 10,
-            search_within: SearchWithin::Channel("23.11".to_owned()),
-            search: None,
-            program: None,
-            name: Some(MatchName {
-                name: "rust".to_owned(),
-            }),
-            version: None,
-            query_string: None,
-        };
-
-        let url = query.get_url().unwrap();
-        eprintln!("{}", url);
-    }
 }
