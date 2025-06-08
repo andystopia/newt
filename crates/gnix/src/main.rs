@@ -184,11 +184,11 @@ fn search_package(name: &str, unstable: bool) -> color_eyre::Result<()> {
 
     for package in packages {
         if package.package_pversion.trim().is_empty() {
-            println!("{}", package.package_pname.white().bold(),);
+            println!("{}", package.package_attr_name.white().bold(),);
         } else {
             println!(
                 "{} @ {}",
-                package.package_pname.white().bold(),
+                package.package_attr_name.white().bold(),
                 package.package_pversion
             );
         }
