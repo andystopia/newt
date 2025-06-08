@@ -7,3 +7,6 @@ resolver = "2"
 # floem = {path = "crates/floem"}
 nix-installed-list = {path = "crates/nix-installed-list"}
 nix-channel-list = {path = "crates/nix-channel-list"}
+nix-elastic-search = {path = "crates/nix-elastic-search"}
+nix-elastic-search-ureq = {path = "crates/nix-elastic-search-ureq"}
+nix-search-sort-utils = {path = "crates/nix-search-sort-utils"}
