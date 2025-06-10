@@ -80,8 +80,11 @@ impl InstalledPackagePrinter for PrettyInstalledPackagePrinter {
 
 #[derive(Parser, Debug)]
 pub enum Cli {
-    #[clap(about = "List installed packages")]
+    /// list installed packages
     List,
+
+    /// give directory where package is installed
+    WhichStoreDir { package: String },
 
     /// list available channels from the nixpkgs
     /// repository. this command only shows "fully-fledged"
@@ -202,6 +205,28 @@ fn search_package(name: &str, unstable: bool) -> color_eyre::Result<()> {
 fn main() -> color_eyre::Result<()> {
     let cli = Cli::parse();
     match cli {
+        Cli::WhichStoreDir { package } => {
+            let manifest = manifest_parsed()?;
+
+            let package_details = manifest
+                .elements
+                .packages
+                .iter()
+                .find(|(pname, _)| *pname == &package)
+                .map(|(_, els)| els)
+                .with_context(|| format!("No such package `{}` is installed", package))?;
+
+            let correct_path = package_details.store_paths.iter().find_map(|it| {
+                match it.split('-').collect::<Vec<_>>().as_slice() {
+                    &[_, v, _] if v == package => Some(it),
+                    _ => None,
+                }
+            }).with_context(||
+                format!("The package `{}` was found, but it doesn't appear to have a valid store path", package)
+            )?;
+
+            println!("{}", correct_path);
+        }
         Cli::List => {
             let parsed = manifest_parsed()?;
 
