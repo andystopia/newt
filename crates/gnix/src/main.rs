@@ -120,22 +120,6 @@ pub enum Cli {
     },
 }
 
-/// the idea of this function is that
-/// while not all links / repos have
-/// an obvious mapping to a fetcher,
-/// some definitely do, and it makes
-/// sense to map those to those respective
-/// fetchers for the sake of a friendly
-/// UX.
-fn package_prefix_map(input: &str) -> String {
-    if input.starts_with("https://github.com/") {
-        let input = input.trim_start_matches("https://github.com/");
-        format!("github:{}", input)
-    } else {
-        input.to_string()
-    }
-}
-
 fn search_package(name: &str, unstable: bool) -> color_eyre::Result<()> {
     let searcher = NixElasticSearch::new();
     let ureq_searcher = UreqNixSearcher::new(searcher);
@@ -284,7 +268,6 @@ fn main() -> color_eyre::Result<()> {
             }
         }
         Cli::Install { package, unstable } => {
-            let package = package_prefix_map(&package);
             let selected_channel = if unstable {
                 "unstable".to_owned()
             } else {
@@ -298,9 +281,13 @@ fn main() -> color_eyre::Result<()> {
                 latest_channel
             };
 
-            let augment = package
-                .chars()
-                .all(|c| ('A'..='z').contains(&c) || c == '_' || c == '-' || c == '.');
+            let augment = package.chars().all(|c| {
+                ('A'..='z').contains(&c)
+                    || ('0'..='9').contains(&c)
+                    || c == '_'
+                    || c == '-'
+                    || c == '.'
+            });
 
             let src = if augment {
                 format!("nixpkgs/nixos-{selected_channel}#{package}")
